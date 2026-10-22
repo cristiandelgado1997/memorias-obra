@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -232,6 +232,7 @@ function totalesPorItem() {
 }
 
 function renderItems(main) {
+  const avisoOff = ('serviceWorker' in navigator) && !S.offlineListo ? `<div class="note" style="margin-bottom:10px">Preparando la app para usar sin señal… Déjala abierta con internet unos segundos hasta que salga “Lista para usar sin señal”.</div>` : '';
   if (!filasBase().length) {
     if (!S.conn.url) { main.innerHTML = `<div class="empty"><b>La app no está conectada a la obra.</b><br><br>Ve a <b>Ajustes</b> y en “Dirección del servidor” pega el enlace que te enviaron por WhatsApp. Luego toca <b>Guardar conexión</b>.</div>`; return; }
     main.innerHTML = `<div class="empty"><b>Aún no hay presupuesto cargado.</b><br><br>${S.conn.url ? 'Si alguien ya lo cargó, toca <b>Sincronizar</b> en Ajustes cuando tengas señal.' : 'Primero conecta la app con el servidor en <b>Ajustes</b>.'}<br>El director lo carga una sola vez desde Ajustes → <b>Presupuesto</b>, eligiendo el Excel del contrato.</div>`;
@@ -240,10 +241,11 @@ function renderItems(main) {
   const tot = totalesPorItem();
   const q = S.q.trim().toLowerCase();
   if (!$('#q', main)) {
-    main.innerHTML = `<input class="search" id="q" type="search" placeholder="Buscar ítem: 2,1,5 · estuco · tubería…" autocomplete="off"><div id="itemsList"></div>`;
+    main.innerHTML = `<div id="offAviso"></div><input class="search" id="q" type="search" placeholder="Buscar ítem: 2,1,5 · estuco · tubería…" autocomplete="off"><div id="itemsList"></div>`;
     $('#q', main).value = S.q;
     $('#q', main).addEventListener('input', (e) => { S.q = e.target.value; renderItems(main); });
   }
+  $('#offAviso', main).innerHTML = avisoOff;
   let h = '', pend = [], n = 0;
   for (const x of allRows()) {
     if (x.t === 'h') {
@@ -539,6 +541,7 @@ function renderAjustes(main) {
   const n = vivas().length;
   main.innerHTML = `<div class="content" style="padding:0">
     <div class="card" style="display:flex;flex-direction:column;gap:10px">
+      ${S.offlineListo ? '<div class="note ok"><b>✓ Lista para usar sin señal</b> en este celular.</div>' : '<div class="note">Aún no está lista para usar sin señal. Mantén la app abierta con internet unos segundos.</div>'}
       <div style="font-weight:700">Conexión con Google Drive</div>
       ${S.conn.url ? `<div class="note ${S.syncErr ? 'bad' : 'ok'}">${S.syncErr ? esc(S.syncErr) : S.ultimaSync ? 'Conectado. Última sincronización: ' + new Date(S.ultimaSync).toLocaleTimeString('es-CO') : 'Conectado.'}</div>` : '<div class="note">Sin conexión configurada: lo que registres queda solo en este celular.</div>'}
       <label class="f">Tu nombre<input id="c_nombre" value="${esc(S.nombre)}" placeholder="Ej. Juan Pérez · Inspector"></label>
@@ -683,6 +686,20 @@ function pantallaBienvenida() {
   sync();
 })();
 
+/* ---------- ¿Ya quedó guardada para usar sin señal? ---------- */
+S.offlineListo = false;
+async function revisarOffline() {
+  try {
+    const ok = !!navigator.serviceWorker && !!navigator.serviceWorker.controller && !!(await caches.match('index.html', { ignoreSearch: true })) && !!(await caches.match('app.js', { ignoreSearch: true }));
+    const antes = S.offlineListo; S.offlineListo = ok;
+    if (ok && !antes) {
+      let avisado = false; try { avisado = !!(await DB.get('kv', 'avisoOffline')); } catch (e) {}
+      if (!avisado) { toast('Listo: la app quedó guardada en este celular y ya abre sin señal.'); DB.put('kv', 1, 'avisoOffline'); }
+    }
+    if (ok !== antes) render();
+  } catch (e) {}
+}
+
 /* ---------- Actualizaciones de la app ---------- */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').then((reg) => {
@@ -699,6 +716,12 @@ if ('serviceWorker' in navigator) {
     });
     setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
   }).catch(() => {});
+  const habiaControlador = !!navigator.serviceWorker.controller;
   let recargado = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!recargado) { recargado = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (habiaControlador && !recargado) { recargado = true; location.reload(); }  // solo al actualizar, no la primera vez
+    else setTimeout(revisarOffline, 500);
+  });
+  navigator.serviceWorker.ready.then(() => setTimeout(revisarOffline, 800));
+  setTimeout(revisarOffline, 1500);
 }
