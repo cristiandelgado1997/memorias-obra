@@ -1,5 +1,5 @@
 /* Service worker: guarda la app en el celular para que abra sin señal */
-const CACHE = 'memorias-obra-v1.0.0';
+const CACHE = 'memorias-obra-v1.0.1';
 const ARCHIVOS = [
   './', 'index.html', 'app.js', 'xl.js', 'importar.js', 'exceljs.min.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/maskable-512.png',

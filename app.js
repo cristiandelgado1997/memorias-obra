@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -233,6 +233,7 @@ function totalesPorItem() {
 
 function renderItems(main) {
   if (!filasBase().length) {
+    if (!S.conn.url) { main.innerHTML = `<div class="empty"><b>La app no está conectada a la obra.</b><br><br>Ve a <b>Ajustes</b> y en “Dirección del servidor” pega el enlace que te enviaron por WhatsApp. Luego toca <b>Guardar conexión</b>.</div>`; return; }
     main.innerHTML = `<div class="empty"><b>Aún no hay presupuesto cargado.</b><br><br>${S.conn.url ? 'Si alguien ya lo cargó, toca <b>Sincronizar</b> en Ajustes cuando tengas señal.' : 'Primero conecta la app con el servidor en <b>Ajustes</b>.'}<br>El director lo carga una sola vez desde Ajustes → <b>Presupuesto</b>, eligiendo el Excel del contrato.</div>`;
     return;
   }
@@ -517,6 +518,17 @@ async function exportar() {
   EX.busy = false; render();
 }
 
+/* ---------- Enlace de conexión pegado a mano (iPhone) ---------- */
+function leerEnlaceConexion(txt) {
+  const m = String(txt || '').match(/conectar=([A-Za-z0-9+/=%_-]+)/);
+  if (!m) return null;
+  try { const c = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1]))))); return c.u ? { url: c.u, clave: c.k || '' } : null; } catch (e) { return null; }
+}
+async function aplicarConexion(c) {
+  S.conn = c; await DB.put('kv', S.conn, 'conn');
+  S.ultimoPull = 0; await DB.put('kv', 0, 'ultimoPull');
+}
+
 /* ---------- Ajustes ---------- */
 function enlaceInvitacion() {
   const cfg = btoa(unescape(encodeURIComponent(JSON.stringify({ u: S.conn.url, k: S.conn.clave }))));
@@ -530,7 +542,7 @@ function renderAjustes(main) {
       <div style="font-weight:700">Conexión con Google Drive</div>
       ${S.conn.url ? `<div class="note ${S.syncErr ? 'bad' : 'ok'}">${S.syncErr ? esc(S.syncErr) : S.ultimaSync ? 'Conectado. Última sincronización: ' + new Date(S.ultimaSync).toLocaleTimeString('es-CO') : 'Conectado.'}</div>` : '<div class="note">Sin conexión configurada: lo que registres queda solo en este celular.</div>'}
       <label class="f">Tu nombre<input id="c_nombre" value="${esc(S.nombre)}" placeholder="Ej. Juan Pérez · Inspector"></label>
-      <label class="f">Dirección del servidor<input id="c_url" value="${esc(S.conn.url)}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+      <label class="f">Dirección del servidor<input id="c_url" value="${esc(S.conn.url)}" placeholder="Pega aquí el enlace que te enviaron o la URL /exec" autocomplete="off"></label>
       <label class="f">Clave<input id="c_clave" value="${esc(S.conn.clave)}" autocomplete="off"></label>
       <div class="actions"><button class="btn pri" type="button" id="c_save">Guardar conexión</button><button class="btn" type="button" id="c_sync" ${S.conn.url ? '' : 'disabled'}>Sincronizar ahora</button></div>
       ${S.conn.url ? `<div class="hint">Enlace para tu personal: lo abren una vez y la app queda conectada.</div><div class="inline"><input id="c_link" readonly value="${esc(enlaceInvitacion())}"><button class="btn" type="button" id="c_copy">Copiar</button></div>` : ''}
@@ -575,6 +587,8 @@ function renderAjustes(main) {
   const v = (k) => $('#' + k, main).value.trim();
   $('#c_save', main).addEventListener('click', async () => {
     S.nombre = v('c_nombre'); await DB.put('kv', S.nombre, 'nombre');
+    const pegado = leerEnlaceConexion(v('c_url'));
+    if (pegado) { await aplicarConexion(pegado); toast('Conectada con el enlace'); render(); sync(); return; }
     const url = v('c_url'), clave = v('c_clave');
     if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { toast('La dirección debe empezar por https://script.google.com/'); return; }
     const cambio = url !== S.conn.url;
@@ -635,11 +649,14 @@ function pantallaBienvenida() {
     <p class="hint" style="font-size:15px">Registra las medidas de campo con fotos, aunque no haya señal. Todo se sube a Google Drive cuando vuelve la conexión.</p>
     ${S.conn.url ? '<div class="note ok">Esta app ya quedó conectada con el servidor de la obra.</div>' : ''}
     <label class="f">¿Cómo te llamas?<input id="w_nombre" autocomplete="name" placeholder="Ej. Juan Pérez"></label>
+    ${S.conn.url ? '' : '<label class="f">Enlace de conexión de la obra<input id="w_link" autocomplete="off" placeholder="Pega el enlace que te llegó por WhatsApp"></label><div class="hint">En iPhone, la app instalada necesita este enlace una vez. Mantén presionado el enlace en WhatsApp → Copiar, y pégalo aquí.</div>'}
     <button class="btn pri" type="button" id="w_ok">Empezar</button>
   </div>`;
   document.body.appendChild(host);
   $('#w_ok', host).addEventListener('click', async () => {
     const nm = $('#w_nombre', host).value.trim(); if (!nm) { toast('Escribe tu nombre.'); return; }
+    const li = $('#w_link', host);
+    if (li && li.value.trim()) { const c = leerEnlaceConexion(li.value); if (!c) { toast('Ese enlace no es válido. Cópialo completo.'); return; } await aplicarConexion(c); }
     S.nombre = nm; await DB.put('kv', nm, 'nombre'); host.remove(); render(); sync();
   });
 }
