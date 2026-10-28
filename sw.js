@@ -1,5 +1,5 @@
 /* Service worker: guarda la app en el celular para que abra sin señal */
-const CACHE = 'memorias-obra-v1.0.2';
+const CACHE = 'memorias-obra-v1.0.3';
 const NUCLEO = [
   './', 'index.html', 'app.js', 'xl.js', 'importar.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/maskable-512.png',
@@ -32,6 +32,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // el servidor de Google va directo a la red
+  if (url.pathname.includes('/beta/')) return; // la versión de prueba tiene su propio service worker
   if (req.mode === 'navigate') {
     e.respondWith((async () => {
       const c = await caches.open(CACHE);
