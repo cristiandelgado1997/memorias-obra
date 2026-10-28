@@ -1,7 +1,7 @@
 /* Service worker: guarda la app en el celular para que abra sin señal */
-const CACHE = 'mobeta-v0.1.0';
+const CACHE = 'mobeta-v0.2.0';
 const NUCLEO = [
-  './', 'index.html', 'app.js', 'plano.js', 'xl.js', 'importar.js', 'manifest.webmanifest',
+  './', 'index.html', 'app.js', 'plano.js', 'vistas.js', 'xl.js', 'importar.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/maskable-512.png',
   'fonts/ibm-plex-sans-condensed-latin-400-normal.woff2', 'fonts/ibm-plex-sans-condensed-latin-500-normal.woff2',
   'fonts/ibm-plex-sans-condensed-latin-600-normal.woff2', 'fonts/ibm-plex-sans-condensed-latin-700-normal.woff2',
@@ -12,7 +12,7 @@ self.addEventListener('install', (e) => {
     const c = await caches.open(CACHE);
     // Primero lo indispensable para abrir sin señal (liviano), luego el generador de Excel
     await c.addAll(NUCLEO.map((u) => new Request(u, { cache: 'reload' })));
-    try { await c.add(new Request('exceljs.min.js', { cache: 'reload' })); } catch (err) {}
+    for (const lib of ['exceljs.min.js', 'jspdf.umd.min.js', 'three.min.js']) { try { await c.add(new Request(lib, { cache: 'reload' })); } catch (err) {} }
   })());
 });
 self.addEventListener('activate', (e) => {

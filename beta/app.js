@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.1.0';
+const VERSION = 'beta 0.2.0';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -36,7 +36,7 @@ const DB = (() => {
 
 /* ---------- Estado ---------- */
 const S = {
-  medidas: {}, cfg: { proyecto: {}, subs: [], ubic: [], tipos: {}, extras: [], presupuesto: null, planos: null },
+  medidas: {}, cfg: { proyecto: {}, subs: [], ubic: [], tipos: {}, extras: [], presupuesto: null, planos: null, elementos: null },
   outbox: [], conn: { url: '', clave: '' }, nombre: '', ultimoPull: 0,
   tab: 'items', q: '', syncing: false, syncErr: '', online: navigator.onLine, ultimaSync: 0,
 };
@@ -397,12 +397,15 @@ function abrirMedida(cod, m) {
   const etiquetasBase = { a: ($('#lbl_a', host) || {}).textContent, b: ($('#lbl_b', host) || {}).textContent };
   let autoElem = d.elem && PARTES.some((p) => p[1] === d.elem) ? d.elem : '';
   const pintarEsp = () => {
-    const box = $('#espBox', host); if (!edificaciones().length) { box.innerHTML = ''; return; }
+    const box = $('#espBox', host);
     const ref = d.esp && espBy(d.esp);
     box.innerHTML = `<div class="espsel">${ref
       ? `<div class="esp-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.5-7-12a7 7 0 0114 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg><span><small>${esc(ref.edif.nombre)}</small>${esc(ref.esp.nombre)}</span><button type="button" class="btn" id="espCambiar">Cambiar</button></div>
-         <div class="partes" role="group" aria-label="Parte del espacio">${PARTES.map(([k, n]) => `<button type="button" data-parte="${k}" aria-pressed="${d.parte === k}">${n}</button>`).join('')}</div>`
-      : `<button type="button" class="btn plano-btn" id="espElegir"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 10h9v11M12 3v7"/></svg>Elegir el espacio en el plano</button>`}</div>`;
+         <div class="eyebrow">¿Qué parte del espacio mides?</div>
+         <div class="partes" role="group" aria-label="Parte del espacio">${PARTES.filter(([k]) => !/^m/.test(k)).map(([k, n]) => `<button type="button" data-parte="${k}" aria-pressed="${d.parte === k}">${n}</button>`).join('')}</div>
+         <div class="hint">O toca el muro en el dibujo:</div>
+         ${selectorMuros(d.esp, d.parte)}`
+      : `<button type="button" class="btn plano-btn" id="espElegir"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 10h9v11M12 3v7"/></svg>${edificaciones().length ? 'Elegir el espacio en el plano' : 'Ligar a un espacio (crear espacio)'}</button>`}</div>`;
     const pick = () => elegirEnPlano(d.esp, (id) => {
       d.esp = id || ''; if (!id) d.parte = '';
       if (id) { const ub = espBy(id).esp.nombre.toUpperCase(); $('#f_ubic', host).value = ub; d.ubic = ub; }

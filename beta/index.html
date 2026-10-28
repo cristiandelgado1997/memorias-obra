@@ -160,6 +160,7 @@ rect.esp.medido{fill:rgba(29,111,216,.26);stroke:#1d6fd8;stroke-width:.09}
 rect.esp.revisar{fill:rgba(240,140,0,.34);stroke:#c26a00;stroke-width:.09}
 rect.esp.vacio{fill:rgba(138,150,163,.10);stroke:#8a96a3;stroke-width:.05}
 rect.esp.sel{stroke:var(--amber);stroke-width:.32}
+rect.elem{fill:#e9dcc8;stroke:#8a5a2b;stroke-width:.04;pointer-events:none}
 svg text{font-family:var(--f-ui)}
 text.lbl{text-anchor:middle;dominant-baseline:middle;font-weight:700;fill:var(--ink);pointer-events:none}
 text.cota{text-anchor:middle;dominant-baseline:middle;font-family:var(--f-num);font-weight:600}
@@ -185,7 +186,13 @@ text.area{text-anchor:middle;dominant-baseline:middle;font-family:var(--f-num);f
 .esp-chip span{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:700}
 .esp-chip small{font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 .esp-chip .btn{padding:8px 12px}
-.partes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.partes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.card.fig.pick svg{max-height:260px}
+line.hit{stroke:transparent;cursor:pointer;pointer-events:stroke}
+.muros-op{display:flex;flex-direction:column;gap:6px}
+.muro-op{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+.muro-op[aria-pressed="true"]{border-color:var(--head);box-shadow:0 0 0 2px var(--amber)}
+.muro-op .mu-t{min-width:0}
 .partes button{padding:10px 4px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-weight:700;font-size:14px;cursor:pointer;color:var(--ink)}
 .partes button[aria-pressed="true"]{background:var(--head);color:var(--amber);border-color:var(--head)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:70;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px;max-width:90%}
@@ -220,6 +227,7 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 <script src="xl.js"></script>
 <script src="importar.js"></script>
 <script src="plano.js"></script>
+<script src="vistas.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
