@@ -31,7 +31,7 @@ function modelo() {
       const k = Number(mm[1]);
       if (m.desc) {
         const key = m.esp + '|' + k;
-        ((vanosPorItem[key] = vanosPorItem[key] || {})[m.item] = vanosPorItem[key][m.item] || []).push({ ancho: a, alto: b, pos: m.vanoPos === '' || m.vanoPos == null ? null : num(m.vanoPos) });
+        ((vanosPorItem[key] = vanosPorItem[key] || {})[m.item] = vanosPorItem[key][m.item] || []).push({ ancho: a, alto: b, pos: m.vanoPos === '' || m.vanoPos == null ? null : num(m.vanoPos), sill: m.vanoTipo === 'puerta' ? 0 : (m.vanoSill === '' || m.vanoSill == null ? null : num(m.vanoSill)), tipo: m.vanoTipo || '' });
       } else {
         if (a && (tipo === 'AREA' || tipo === 'LIN')) o.muros[k].len = a;
         if (b && tipo === 'AREA') o.muros[k].alto = b;
@@ -43,11 +43,11 @@ function modelo() {
     const [esp, k] = key.split('|'); const cuenta = {};
     for (const lista of Object.values(porItem)) {
       const c = {};
-      for (const v of lista) { const kk = [r2(v.ancho), r2(v.alto), v.pos == null ? '' : r2(v.pos)].join('|'); c[kk] = (c[kk] || 0) + 1; }
+      for (const v of lista) { const kk = [r2(v.ancho), r2(v.alto), v.pos == null ? '' : r2(v.pos), v.sill == null ? '' : r2(v.sill), v.tipo].join('|'); c[kk] = (c[kk] || 0) + 1; }
       for (const [kk, n] of Object.entries(c)) cuenta[kk] = Math.max(cuenta[kk] || 0, n);
     }
     const vanos = [];
-    for (const [kk, n] of Object.entries(cuenta)) { const [an, al, po] = kk.split('|'); for (let i = 0; i < n; i++) vanos.push({ ancho: Number(an), alto: Number(al), pos: po === '' ? null : Number(po) }); }
+    for (const [kk, n] of Object.entries(cuenta)) { const [an, al, po, si, ti] = kk.split('|'); for (let i = 0; i < n; i++) vanos.push({ ancho: Number(an), alto: Number(al), pos: po === '' ? null : Number(po), sill: si === '' ? null : Number(si), tipo: ti }); }
     M[esp].muros[k].vanos = vanos;
   }
   // diferencias con el plano
@@ -62,6 +62,12 @@ function modelo() {
   return M;
 }
 // Medida "real" de un muro: la del propio muro, la del opuesto, o la del piso
+// altura de la base del vano: la medida; si falta, puerta desde el piso y ventana con dintel a 2,10 m
+function antepecho(v) {
+  if (v.sill != null) return { z: v.sill, estimado: false };
+  if (v.tipo === 'puerta' || (!v.tipo && v.alto >= 1.8)) return { z: 0, estimado: v.tipo !== 'puerta' };
+  return { z: Math.max(0.3, 2.1 - v.alto), estimado: true };
+}
 function largoObra(o, s, k) {
   if (!o) return null;
   const opu = { 1: 3, 2: 4, 3: 1, 4: 2 }[k];
@@ -160,9 +166,14 @@ function svgMuro(s, o, k) {
   const vs = (o && o.muros[k].vanos) || [];
   vs.forEach((v, i) => {
     const x = v.pos != null ? v.pos : (L - v.ancho) / 2 + i * 0.15;
-    const top = h - v.alto;
-    g += `<rect x="${r2(x)}" y="${r2(top)}" width="${r2(v.ancho)}" height="${r2(v.alto)}" fill="var(--panel)" stroke="var(--warn)" stroke-width="${sw}" ${v.pos == null ? 'stroke-dasharray="0.12 0.08"' : ''}/>
+    const ap = antepecho(v); const top = h - ap.z - v.alto;
+    g += `<rect x="${r2(x)}" y="${r2(top)}" width="${r2(v.ancho)}" height="${r2(v.alto)}" fill="var(--panel)" stroke="var(--warn)" stroke-width="${sw}" ${v.pos == null || ap.estimado ? 'stroke-dasharray="0.12 0.08"' : ''}/>
       <text x="${r2(x + v.ancho / 2)}" y="${r2(top - fs * 0.5)}" font-size="${r2(fs * 0.8)}" class="cota" fill="var(--warn)">${fmt(v.ancho)} × ${fmt(v.alto)}${v.pos == null ? ' ~' : ''}</text>`;
+    if (ap.z > 0) {
+      const xc = x + v.ancho + fs * 0.35;
+      g += `<line x1="${r2(xc)}" y1="${r2(h)}" x2="${r2(xc)}" y2="${r2(h - ap.z)}" stroke="var(--warn)" stroke-width="${r2(sw * 0.7)}" ${ap.estimado ? 'stroke-dasharray="0.08 0.06"' : ''}/>
+        <text x="${r2(xc + fs * 0.55)}" y="${r2(h - ap.z / 2)}" font-size="${r2(fs * 0.7)}" class="cota" fill="var(--warn)" transform="rotate(-90 ${r2(xc + fs * 0.55)} ${r2(h - ap.z / 2)})">${fmt(ap.z)}${ap.estimado ? ' ~' : ''}</text>`;
+    }
   });
   for (const el of elementosDe(s.id).filter((x) => Number(x.muro) === k)) {
     const al = Math.min(h, num(el.alto) || 0.9);

@@ -69,7 +69,7 @@ async function exportarPlanosPDF(edifId) {
     pdf.text(`${edif.nombre} · ${p.contratista || ''} · ${fecha}`, Wp - m, 10.5, { align: 'right' });
     pdf.setTextColor(21, 32, 43);
     pdf.setFontSize(7); pdf.setTextColor(91, 103, 116);
-    pdf.text('Cotas en metros, con medidas de obra. * medida del plano sin verificar · ~ posición de vano aproximada · naranja: no cuadra con el plano.', m, Hp - 6);
+    pdf.text('Cotas en metros, con medidas de obra. * medida del plano sin verificar · ~ posición o altura de vano aproximada · naranja: no cuadra con el plano.', m, Hp - 6);
     pdf.text(`Hoja ${pag}`, Wp - m, Hp - 6, { align: 'right' });
     pdf.setTextColor(21, 32, 43);
   };
@@ -155,7 +155,7 @@ function cajas3D(edif) {
       const Hm = (o && (o.muros[k].alto || o.alto)) || null; const H = Hm || 2.4;
       const vanos = ((o && o.muros[k].vanos) || []).map((v, i) => {
         const pos = v.pos != null ? v.pos : (L - v.ancho) / 2 + i * 0.15;
-        const puerta = v.alto >= 1.8; const sill = puerta ? 0 : Math.max(0.3, 2.1 - v.alto);
+        const sill = antepecho(v).z;
         return { u0: Math.max(0, pos), u1: Math.min(L, pos + v.ancho), z0: sill, z1: Math.min(H, sill + v.alto) };
       }).sort((a, b) => a.u0 - b.u0);
       const piezas = []; let u = 0;

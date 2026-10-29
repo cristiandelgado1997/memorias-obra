@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.2.0';
+const VERSION = 'beta 0.2.1';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -340,7 +340,7 @@ function abrirMedida(cod, m) {
   const it = itemBy(cod); const tipo = tipoDe(cod); const T = TIPOS[tipo];
   const nuevo = !m;
   const last = S.ultima || {};
-  const d = m ? JSON.parse(JSON.stringify(m)) : { id: uidGen(), item: cod, ubic: last.ubic || '', esp: last.esp || '', parte: '', vanoPos: '', elem: '', a: '', b: '', c: '', n: '', desc: false, fecha: last.fecha || hoy(), sub: last.sub || '', obs: '', fotos: [], thumbs: {} };
+  const d = m ? JSON.parse(JSON.stringify(m)) : { id: uidGen(), item: cod, ubic: last.ubic || '', esp: last.esp || '', parte: '', vanoPos: '', vanoSill: '', vanoTipo: '', elem: '', a: '', b: '', c: '', n: '', desc: false, fecha: last.fecha || hoy(), sub: last.sub || '', obs: '', fotos: [], thumbs: {} };
   d.thumbs = d.thumbs || {}; d.fotos = d.fotos || [];
   const nuevasFotos = {}; const quitadas = [];
   const prevSheet = S.sheetRender;
@@ -363,7 +363,15 @@ function abrirMedida(cod, m) {
     <label class="f">Elemento / eje / referencia<input id="f_elem" autocomplete="off" placeholder="${tipo === 'ACERO' ? 'Ej. Zapata parrilla inferior' : tipo === 'UND' ? 'Ej. Luminarias' : 'Ej. Muro eje 2'}" value="${esc(d.elem)}"></label>
     <div class="grid2">${campo('a', 0)}${campo('b', 1)}${campo('c', 2)}${campo('n', 3)}</div>
     <label class="toggle"><input type="checkbox" id="f_desc" ${d.desc ? 'checked' : ''}> Es un descuento (vano, puerta, ventana)</label>
-    <label class="f" id="posBox" hidden>Distancia del vano desde la esquina izquierda (m)<input class="n" id="f_vanoPos" inputmode="decimal" placeholder="Opcional" value="${esc(d.vanoPos ?? '')}"><span class="hint" style="font-weight:400">Mirando el muro desde dentro del espacio. Si la dejas vacía, el vano se dibuja centrado.</span></label>
+    <div id="posBox" hidden style="display:flex;flex-direction:column;gap:10px">
+      <div class="eyebrow">¿Qué vano es?</div>
+      <div class="partes" role="group" aria-label="Tipo de vano"><button type="button" data-vtipo="puerta" aria-pressed="${d.vanoTipo === 'puerta'}">Puerta</button><button type="button" data-vtipo="ventana" aria-pressed="${d.vanoTipo === 'ventana'}">Ventana</button><button type="button" data-vtipo="otro" aria-pressed="${d.vanoTipo === 'otro'}">Otro</button></div>
+      <div class="grid2">
+        <label class="f">Distancia desde la esquina izquierda (m)<input class="n" id="f_vanoPos" inputmode="decimal" placeholder="Opcional" value="${esc(d.vanoPos ?? '')}"></label>
+        <label class="f" id="sillBox">Altura desde el piso hasta la base del vano (m)<input class="n" id="f_vanoSill" inputmode="decimal" placeholder="${d.vanoTipo === 'puerta' ? '0' : 'Ej. 1.10'}" value="${esc(d.vanoSill ?? '')}"></label>
+      </div>
+      <div class="hint">Mirando el muro desde dentro del espacio. En una ventana, la altura es el antepecho: del piso hasta donde empieza la ventana. Si dejas la distancia vacía, el vano se dibuja centrado.</div>
+    </div>
     <div id="avisoPlano"></div>
     <div class="result" id="res"><span>Resultado</span><b>0.00 ${esc(it.und)}</b></div>
     <div class="grid2">
@@ -382,8 +390,9 @@ function abrirMedida(cod, m) {
     <div id="delConfirm"></div>
   </form>`;
   const leer = () => {
-    ['ubic', 'elem', 'a', 'b', 'c', 'n', 'fecha', 'sub', 'obs', 'vanoPos'].forEach((k) => { const e = $('#f_' + k, host); if (e) d[k] = e.value; });
+    ['ubic', 'elem', 'a', 'b', 'c', 'n', 'fecha', 'sub', 'obs', 'vanoPos', 'vanoSill'].forEach((k) => { const e = $('#f_' + k, host); if (e) d[k] = e.value; });
     if (typeof d.vanoPos === 'string') d.vanoPos = d.vanoPos.replace(',', '.').trim();
+    if (typeof d.vanoSill === 'string') d.vanoSill = d.vanoSill.replace(',', '.').trim();
     d.ubic = (d.ubic || '').trim().toUpperCase(); d.desc = $('#f_desc', host).checked;
     ['a', 'b', 'n'].forEach((k) => { if (typeof d[k] === 'string') d[k] = d[k].replace(',', '.').trim(); });
     if (tipo !== 'ACERO' && typeof d.c === 'string') d.c = d.c.replace(',', '.').trim();
@@ -409,7 +418,7 @@ function abrirMedida(cod, m) {
     const pick = () => elegirEnPlano(d.esp, (id) => {
       d.esp = id || ''; if (!id) d.parte = '';
       if (id) { const ub = espBy(id).esp.nombre.toUpperCase(); $('#f_ubic', host).value = ub; d.ubic = ub; }
-      pintarEsp(); recalcular();
+    pintarEsp(); recalcular();
     }, cod);
     const b1 = $('#espElegir', host); if (b1) b1.addEventListener('click', pick);
     const b2 = $('#espCambiar', host); if (b2) b2.addEventListener('click', pick);
@@ -449,6 +458,15 @@ function abrirMedida(cod, m) {
     }
     if (dif.length) av.innerHTML = `<div class="note">No cuadra con el plano: ${dif.map(esc).join('; ')}. Si la medida de obra es correcta, guárdala así: el plano se corrige con ella.</div>`;
   };
+  host.querySelectorAll('[data-vtipo]').forEach((b) => b.addEventListener('click', () => {
+    d.vanoTipo = b.dataset.vtipo;
+    host.querySelectorAll('[data-vtipo]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    const fs = $('#f_vanoSill', host);
+    if (d.vanoTipo === 'puerta') { fs.value = '0'; $('#sillBox', host).hidden = true; } else { $('#sillBox', host).hidden = false; if (fs.value === '0') fs.value = ''; fs.placeholder = 'Ej. 1.10'; }
+    const fe = $('#f_elem', host); if (fe && (!fe.value || /^(Muro [1-4]|Puerta|Ventana|Vano)( · M[1-4])?$/.test(fe.value))) fe.value = (d.vanoTipo === 'puerta' ? 'Puerta' : d.vanoTipo === 'ventana' ? 'Ventana' : 'Vano') + ' · M' + (d.parte || '').slice(1);
+    recalcular();
+  }));
+  if (d.vanoTipo === 'puerta') $('#sillBox', host).hidden = true;
   pintarEsp();
   const pintarFotos = () => {
     const ph = $('#phs', host);
@@ -486,7 +504,7 @@ function abrirMedida(cod, m) {
     if (raras.length && !host.dataset.okRaro) { host.dataset.okRaro = '1'; toast('Hay una medida mayor a 150 m. Revisa la coma; si está bien, toca Guardar otra vez.'); return; }
     for (const [fid, data] of Object.entries(nuevasFotos)) await guardarFoto(fid, data, d.id, cod);
     for (const fid of quitadas) await encolar({ tipo: 'fotoDel', id: fid });
-    const body = { id: d.id, item: cod, ubic: d.ubic, elem: (d.elem || '').trim(), a: d.a, b: d.b, c: d.c, n: d.n, desc: d.desc, esp: d.esp || '', parte: d.esp ? (d.parte || '') : '', vanoPos: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoPos || '') : '', fecha: d.fecha || hoy(), sub: d.sub || '', obs: (d.obs || '').trim(), fotos: d.fotos, thumbs: d.thumbs, autor: d.autor || S.nombre || '', creado: d.creado || Date.now(), editado: Date.now(), editadoPor: S.nombre || '' };
+    const body = { id: d.id, item: cod, ubic: d.ubic, elem: (d.elem || '').trim(), a: d.a, b: d.b, c: d.c, n: d.n, desc: d.desc, esp: d.esp || '', parte: d.esp ? (d.parte || '') : '', vanoPos: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoPos || '') : '', vanoSill: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo === 'puerta' ? '0' : (d.vanoSill || '')) : '', vanoTipo: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo || '') : '', fecha: d.fecha || hoy(), sub: d.sub || '', obs: (d.obs || '').trim(), fotos: d.fotos, thumbs: d.thumbs, autor: d.autor || S.nombre || '', creado: d.creado || Date.now(), editado: Date.now(), editadoPor: S.nombre || '' };
     await guardarMedida(body, false);
     S.ultima = { ubic: d.ubic, fecha: d.fecha, sub: d.sub, esp: d.esp || '' };
     toast(navigator.onLine && S.conn.url ? 'Medida guardada' : 'Guardada en el celular · se subirá con señal');
