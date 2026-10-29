@@ -138,9 +138,51 @@ async function exportarPlanosPDF(edifId) {
 const ESPESOR = 0.1;
 function cajas3D(edif) {
   const M = modelo(); const out = [];
-  for (const s of edif.espacios) {
+  const EXT = 0.15;      // espesor de muro exterior cuando no hay espacio vecino
+  const MAXGAP = 0.6;    // un hueco menor que esto entre dos espacios es un muro compartido
+  const esExterior = (s) => /PLACA|AND[EÉ]N|PATIO|EXTERIOR|TERRAZA|PARQUEADERO/i.test(s.nombre || '');
+  // 1. geometría de cada espacio con sus vanos en coordenadas absolutas del plano
+  const G = edif.espacios.map((s) => {
     const o = M[s.id]; const r = resumenEspacio(s, o);
-    const x0 = s.x0, y0 = s.y0, w = r.W, h = r.H;
+    const g = { s, o, x0: s.x0, y0: s.y0, w: r.W, h: r.H, muros: {} };
+    for (let k = 1; k <= 4; k++) {
+      const L = k === 1 || k === 3 ? g.w : g.h;
+      const Hm = (o && (o.muros[k].alto || o.alto)) || null;
+      const vanos = ((o && o.muros[k].vanos) || []).map((v, i) => {
+        const pos = v.pos != null ? v.pos : (L - v.ancho) / 2 + i * 0.15;
+        const u0 = Math.max(0, pos), u1 = Math.min(L, pos + v.ancho);
+        const ap = antepecho(v); const z0 = ap.z, z1 = ap.z + v.alto;
+        const puerta = z0 === 0 && (v.tipo === 'puerta' || (!v.tipo && v.alto >= 1.8));
+        // eje absoluto: x para muros 1 y 3, y para muros 2 y 4
+        const a0 = k === 1 ? g.x0 + g.w - u1 : k === 2 ? g.y0 + g.h - u1 : k === 3 ? g.x0 + u0 : g.y0 + u0;
+        return { a0, a1: a0 + (u1 - u0), z0, z1, puerta };
+      });
+      g.muros[k] = { Hm, H: Hm || 2.4, vanos };
+    }
+    return g;
+  });
+  const solapa = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0);
+  // vecino frente a cada muro (en el plano) y espesor del muro
+  for (const g of G) for (let k = 1; k <= 4; k++) {
+    let mejor = null, gap = Infinity;
+    if (!g.s.libre) for (const q of G) {
+      if (q === g || q.s.libre || esExterior(q.s)) continue;
+      const S = g.s, Q = q.s; let d = null, sol = 0;
+      if (k === 1) { d = S.y0 - Q.y1; sol = solapa(S.x0, S.x1, Q.x0, Q.x1); }
+      if (k === 2) { d = Q.x0 - S.x1; sol = solapa(S.y0, S.y1, Q.y0, Q.y1); }
+      if (k === 3) { d = Q.y0 - S.y1; sol = solapa(S.x0, S.x1, Q.x0, Q.x1); }
+      if (k === 4) { d = S.x0 - Q.x1; sol = solapa(S.y0, S.y1, Q.y0, Q.y1); }
+      if (sol > 0.3 && d > -0.05 && d < MAXGAP && d < gap) { gap = d; mejor = q; }
+    }
+    const m = g.muros[k];
+    m.vecino = mejor; m.t = mejor ? Math.max(0.04, gap / 2) : EXT; // compartido: cada espacio pone la mitad
+    // los vanos del vecino en la cara opuesta también abren este muro
+    m.todos = m.vanos.slice();
+    if (mejor) { const opu = { 1: 3, 2: 4, 3: 1, 4: 2 }[k]; for (const v of mejor.muros[opu].vanos) m.todos.push(v); }
+  }
+  // 2. cajas
+  for (const g of G) {
+    const { s, o, x0, y0, w, h } = g;
     const estado = o ? (o.revisar.length ? 'revisar' : 'medido') : 'vacio';
     out.push({ grupo: s.nombre, tipo: 'piso', estado, esp: s.id, nombre: s.nombre, c: [x0 + w / 2, -0.03, y0 + h / 2], d: [w, 0.06, h], rot: 0 });
     const Hc = (o && o.alto) || 2.4;
@@ -149,39 +191,43 @@ function cajas3D(edif) {
       const [a, b, c, d2] = rectElemento(el, w, h); const al = num(el.alto) || 0.9;
       out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', esp: s.id, c: [x0 + (a + c) / 2, al / 2, y0 + (b + d2) / 2], d: [c - a, al, d2 - b], rot: 0 });
     }
-    // inicio y dirección de cada muro (posición medida desde la izquierda, mirando desde dentro)
-    const def = { 1: [x0 + w, y0, -1, 0, 0, 1], 2: [x0 + w, y0 + h, 0, -1, -1, 0], 3: [x0, y0 + h, 1, 0, 0, -1], 4: [x0, y0, 0, 1, 1, 0] };
     for (let k = 1; k <= 4; k++) {
-      const [sx, sy, dx, dy, nx, ny] = def[k];
-      const L = k === 1 || k === 3 ? w : h;
-      const Hm = (o && (o.muros[k].alto || o.alto)) || null; const H = Hm || 2.4;
-      const vanos = ((o && o.muros[k].vanos) || []).map((v, i) => {
-        const pos = v.pos != null ? v.pos : (L - v.ancho) / 2 + i * 0.15;
-        const sill = antepecho(v).z;
-        const puerta = sill === 0 && (v.tipo === 'puerta' || (!v.tipo && v.alto >= 1.8));
-        return { u0: Math.max(0, pos), u1: Math.min(L, pos + v.ancho), z0: sill, z1: Math.min(H, sill + v.alto), puerta };
-      }).sort((a, b) => a.u0 - b.u0);
-      const piezas = []; let u = 0;
-      for (const v of vanos) {
-        if (v.u0 > u) piezas.push([u, v.u0, 0, H]);
-        if (v.z0 > 0) piezas.push([v.u0, v.u1, 0, v.z0]);
-        if (v.z1 < H) piezas.push([v.u0, v.u1, v.z1, H]);
-        u = Math.max(u, v.u1);
-      }
-      if (u < L) piezas.push([u, L, 0, H]);
-      const rot = Math.atan2(dy, dx);
+      if (esExterior(s)) break; // placas y andenes: solo piso
+      const m = g.muros[k]; const H = m.H; const t = m.t;
+      const horiz = k === 1 || k === 3;
+      // se extiende en las esquinas el espesor de los muros perpendiculares, para que no queden huecos
+      const eIni = horiz ? g.muros[4].t : g.muros[1].t, eFin = horiz ? g.muros[2].t : g.muros[3].t;
+      const A0 = (horiz ? x0 : y0) - eIni, A1 = (horiz ? x0 + w : y0 + h) + eFin;
+      // posición del eje del muro (por fuera de la cara interior)
+      const fijo = k === 1 ? y0 - t / 2 : k === 2 ? x0 + w + t / 2 : k === 3 ? y0 + h + t / 2 : x0 - t / 2;
       const caja = (a, b, z0, z1, grosor, tipo, extra = {}) => {
         if (b - a < 0.005 || z1 - z0 < 0.005) return;
-        const um = (a + b) / 2;
-        out.push(Object.assign({ grupo: s.nombre, tipo, esp: s.id, k, c: [sx + dx * um + nx * ESPESOR / 2, (z0 + z1) / 2, sy + dy * um + ny * ESPESOR / 2], d: [b - a, z1 - z0, grosor], rot }, extra));
+        const am = (a + b) / 2;
+        const c = horiz ? [am, (z0 + z1) / 2, fijo] : [fijo, (z0 + z1) / 2, am];
+        out.push(Object.assign({ grupo: s.nombre, tipo, esp: s.id, k, c, d: [b - a, z1 - z0, grosor], rot: horiz ? 0 : Math.PI / 2 }, extra));
       };
-      for (const [a, b, z0, z1] of piezas) caja(a, b, z0, z1, ESPESOR, 'muro', { supuesto: !Hm });
-      // carpintería: marcos, hojas de puerta y vidrios
-      const fm = 0.05, g = ESPESOR + 0.02;
-      for (const v of vanos) {
-        caja(v.u0, v.u0 + fm, v.z0, v.z1, g, 'marco'); caja(v.u1 - fm, v.u1, v.z0, v.z1, g, 'marco'); caja(v.u0, v.u1, v.z1 - fm, v.z1, g, 'marco');
-        if (v.puerta) caja(v.u0 + fm, v.u1 - fm, 0, v.z1 - fm, 0.04, 'hoja');
-        else { caja(v.u0, v.u1, v.z0, v.z0 + fm, g, 'marco'); caja((v.u0 + v.u1) / 2 - 0.02, (v.u0 + v.u1) / 2 + 0.02, v.z0, v.z1, 0.05, 'marco'); caja(v.u0 + fm, v.u1 - fm, v.z0 + fm, v.z1 - fm, 0.012, 'vidrio'); }
+      const vs = m.todos.map((v) => ({ ...v, a0: Math.max(A0, v.a0), a1: Math.min(A1, v.a1), z1: Math.min(H, v.z1) })).filter((v) => v.a1 - v.a0 > 0.01).sort((p, q) => p.a0 - q.a0);
+      let a = A0;
+      for (const v of vs) {
+        if (v.a0 > a) caja(a, v.a0, 0, H, t, 'muro', { supuesto: !m.Hm });
+        const b0 = Math.max(a, v.a0);
+        if (v.z0 > 0) caja(b0, v.a1, 0, v.z0, t, 'muro', { supuesto: !m.Hm });
+        if (v.z1 < H) caja(b0, v.a1, v.z1, H, t, 'muro', { supuesto: !m.Hm });
+        a = Math.max(a, v.a1);
+      }
+      if (A1 > a) caja(a, A1, 0, H, t, 'muro', { supuesto: !m.Hm });
+      // carpintería de los vanos propios: marcos, hoja de puerta, vidrio
+      const fm = 0.05, gm = t * (m.vecino ? 2 : 1) + 0.02;
+      const fijoCarp = m.vecino ? (k === 1 ? y0 - t : k === 2 ? x0 + w + t : k === 3 ? y0 + h + t : x0 - t) : fijo;
+      const cajaC = (a0, a1, z0, z1, grosor, tipo) => {
+        if (a1 - a0 < 0.005 || z1 - z0 < 0.005) return; const am = (a0 + a1) / 2;
+        out.push({ grupo: s.nombre, tipo, esp: s.id, k, c: horiz ? [am, (z0 + z1) / 2, fijoCarp] : [fijoCarp, (z0 + z1) / 2, am], d: [a1 - a0, z1 - z0, grosor], rot: horiz ? 0 : Math.PI / 2 });
+      };
+      for (const v of m.vanos) {
+        const z1 = Math.min(H, v.z1);
+        cajaC(v.a0, v.a0 + fm, v.z0, z1, gm, 'marco'); cajaC(v.a1 - fm, v.a1, v.z0, z1, gm, 'marco'); cajaC(v.a0, v.a1, z1 - fm, z1, gm, 'marco');
+        if (v.puerta) cajaC(v.a0 + fm, v.a1 - fm, 0, z1 - fm, 0.04, 'hoja');
+        else { cajaC(v.a0, v.a1, v.z0, v.z0 + fm, gm, 'marco'); cajaC((v.a0 + v.a1) / 2 - 0.02, (v.a0 + v.a1) / 2 + 0.02, v.z0, z1, 0.05, 'marco'); cajaC(v.a0 + fm, v.a1 - fm, v.z0 + fm, z1 - fm, 0.012, 'vidrio'); }
       }
     }
   }
