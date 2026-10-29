@@ -82,7 +82,7 @@ function intentarHoja(ws) {
         if (re.test(t)) {
           const resto = t.replace(re, '').replace(/^[:\s]+/, '');
           if (resto.length > 2) return resto;
-          for (let k = c + 1; k <= c + 8; k++) { const v = limpiar(valorCelda(row.getCell(k))); if (v && !re.test(v) && v !== t && !/:\s*$/.test(v)) return v; }
+          for (let k = c + 1; k <= c + 8; k++) { const v = limpiar(valorCelda(row.getCell(k))); if (v && !re.test(v) && v !== t && !/:\s*$/.test(v) && !/^\d{4}-\d{2}-\d{2}/.test(v)) return v; }
         }
       }
     }

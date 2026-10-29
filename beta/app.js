@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.4.2';
+const VERSION = 'beta 0.4.3';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -909,8 +909,7 @@ if ('serviceWorker' in navigator) {
       b.querySelector('button').addEventListener('click', () => { w.postMessage('activar'); });
       document.body.appendChild(b);
     };
-    // versión de prueba: se actualiza sola si no hay un formulario abierto; si lo hay, muestra el aviso
-    const nueva = (w) => { if (!document.querySelector('.sheet')) w.postMessage('activar'); else avisar(w); };
+    const nueva = (w) => avisar(w); // siempre con aviso: la persona decide cuándo actualizar
     if (reg.waiting && navigator.serviceWorker.controller) nueva(reg.waiting);
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
