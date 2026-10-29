@@ -245,8 +245,8 @@ function cajas3D(edif) {
       out.push({ grupo: s.nombre, tipo: 'cielo', esp: s.id, oculto: true, c: [(a + c) / 2, Hc + 0.01, (b + d) / 2], d: [c - a, 0.02, d - b], rot: 0 });
     });
     for (const el of elementosDe(s.id)) {
-      const [a, b, c, d2] = rectElemento(el, w, h); const al = num(el.alto) || 0.9;
-      out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', esp: s.id, c: [x0 + (a + c) / 2, al / 2, y0 + (b + d2) / 2], d: [c - a, al, d2 - b], rot: 0 });
+      const [a, b, c, d2] = rectElemento(el, w, h); const Hm = (o && (o.muros[el.muro || 1].alto || o.alto)) || g.muros[el.muro || 1].H || Hc; const [z0, z1] = alturaElemento(el, Hm);
+      if (z1 - z0 > 0.005) out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', esp: s.id, c: [x0 + (a + c) / 2, (z0 + z1) / 2, y0 + (b + d2) / 2], d: [c - a, z1 - z0, d2 - b], rot: 0 });
     }
     for (let k = 1; k <= 4; k++) {
       const horiz = k === 1 || k === 3;

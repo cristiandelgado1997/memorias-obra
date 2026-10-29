@@ -216,7 +216,7 @@ function dibujarPlantaEspacio(D, s, o, area, edif) {
   for (const [a, b, c, d] of recortes(s)) { D.rellenoM(a, b, c, d, 60); D.grosor('gruesa'); D.rectM(a, b, c, d); }
   D.grosor('gruesa'); D.rectM(0, 0, w, h); D.grosor('media'); D.rectM(-e, -e, w + e, h + e);
   // elementos (closet: rectángulo con aspa)
-  for (const el of elementosDe(s.id)) { const [a, b, c, d] = rectElemento(el, w, h); D.grosor('fina'); D.rectM(a, b, c, d); D.linea(a, b, c, d); D.linea(a, d, c, b); D.texto(MAY(el.nombre), D.X((a + c) / 2), D.Y((b + d) / 2) - 1.2, { pt: 5 }); D.texto(`${f2(num(el.ancho))}x${f2(num(el.fondo))}`, D.X((a + c) / 2), D.Y((b + d) / 2) + 1.4, { pt: 4.5 }); }
+  for (const el of elementosDe(s.id)) { const [a, b, c, d] = rectElemento(el, w, h); D.grosor('fina'); const alto = el.desde && el.desde !== 'piso'; if (alto) pdf.setLineDashPattern([1, 0.7], 0); D.rectM(a, b, c, d); D.linea(a, b, c, d); D.linea(a, d, c, b); if (alto) pdf.setLineDashPattern([], 0); D.texto(MAY(el.nombre), D.X((a + c) / 2), D.Y((b + d) / 2) - 1.2, { pt: 5 }); D.texto(`${f2(num(el.ancho))}x${f2(num(el.fondo))}`, D.X((a + c) / 2), D.Y((b + d) / 2) + 1.4, { pt: 4.5 }); }
   // números de muro
   const etiqueta = (x, y, k) => { pdf.setLineWidth(0.15); pdf.circle(D.X(x), D.Y(y), 2.2, 'S'); D.texto('M' + k, D.X(x), D.Y(y) + 0.9, { pt: 5.5, negrita: true }); };
   const m = Math.min(w, h) * 0.12 + 0.1;
@@ -268,7 +268,7 @@ function dibujarAlzado(D, s, o, k, area, edif) {
     D.cota(v.x + v.ancho, z0, v.x + v.ancho, z1, 3.5, f2(v.alto), { pt: 5 });
     if (z0 > 0) D.cota(v.x, 0, v.x, z0, -3.5, f2(z0) + (ap.estimado ? '~' : ''), { pt: 5 });
   }
-  for (const el of elementosDe(s.id).filter((x) => Number(x.muro) === k)) { const al = Math.min(H, num(el.alto) || 0.9); D.grosor('fina'); D.rectM(num(el.pos), 0, num(el.pos) + num(el.ancho), al); D.linea(num(el.pos), 0, num(el.pos) + num(el.ancho), al); D.linea(num(el.pos), al, num(el.pos) + num(el.ancho), 0); D.texto(MAY(el.nombre), D.X(num(el.pos) + num(el.ancho) / 2), D.Y(al) - 1, { pt: 4.8 }); }
+  for (const el of elementosDe(s.id).filter((x) => Number(x.muro) === k)) { const [z0, al] = alturaElemento(el, H); const xa = num(el.pos), xb = xa + num(el.ancho); D.grosor('fina'); D.rectM(xa, z0, xb, al); D.linea(xa, z0, xb, al); D.linea(xa, al, xb, z0); D.texto(MAY(el.nombre), D.X((xa + xb) / 2), D.Y(al) - 1, { pt: 4.8 }); if (z0 > 0.01) D.cota(xa, 0, xa, z0, -3.5, f2(z0), { pt: 5 }); }
   D.cota(0, 0, L, 0, 7, f2(L) + ((o && largoObra(o, s, k) != null) ? '' : '*'));
   D.cota(L, 0, L, H, 6, Hm ? f2(H) : 'H?');
   if (Hm) { const neto = L * H - vs.reduce((t, v) => t + v.ancho * v.alto, 0); D.texto(`ÁREA NETA ${f2(neto)} m²`, D.X(L / 2), D.Y(H / 2), { pt: 5.5 }); }

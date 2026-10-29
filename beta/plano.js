@@ -140,7 +140,7 @@ function svgEspacio(s, o, opt = {}) {
   }
   for (const el of elementosDe(s.id)) {
     const [a, b, c, d3] = rectElemento(el, w, h);
-    g += `<rect x="${r2(a)}" y="${r2(h - d3)}" width="${r2(c - a)}" height="${r2(d3 - b)}" fill="#e9dcc8" stroke="#8a5a2b" stroke-width="${r2(sw / 2)}"/><text x="${r2((a + c) / 2)}" y="${r2(h - (b + d3) / 2)}" font-size="${r2(Math.max(w, h) / 30)}" class="lbl" fill="#5c3a17">${esc(el.nombre)}</text>`;
+    g += `<rect x="${r2(a)}" y="${r2(h - d3)}" width="${r2(c - a)}" height="${r2(d3 - b)}" fill="#e9dcc8" ${el.desde && el.desde !== 'piso' ? `fill-opacity=".45" stroke-dasharray="${r2(sw)} ${r2(sw / 1.5)}"` : ''} stroke="#8a5a2b" stroke-width="${r2(sw / 2)}"/><text x="${r2((a + c) / 2)}" y="${r2(h - (b + d3) / 2)}" font-size="${r2(Math.max(w, h) / 30)}" class="lbl" fill="#5c3a17">${esc(el.nombre)}</text>`;
   }
   const d1 = o && largoObra(o, s, 1) != null && Math.abs(largoObra(o, s, 1) - P.w) > TOL;
   const d2 = o && largoObra(o, s, 2) != null && Math.abs(largoObra(o, s, 2) - P.h) > TOL;
@@ -182,8 +182,12 @@ function svgMuro(s, o, k) {
     }
   });
   for (const el of elementosDe(s.id).filter((x) => Number(x.muro) === k)) {
-    const al = Math.min(h, num(el.alto) || 0.9);
-    g += `<rect x="${r2(num(el.pos))}" y="${r2(h - al)}" width="${r2(num(el.ancho))}" height="${r2(al)}" fill="#e9dcc8" stroke="#8a5a2b" stroke-width="${sw}"/><text x="${r2(num(el.pos) + num(el.ancho) / 2)}" y="${r2(h - al / 2)}" font-size="${r2(fs * 0.75)}" class="lbl" fill="#5c3a17">${esc(el.nombre)}</text>`;
+    const [z0, z1] = alturaElemento(el, h); const xe = num(el.pos), we = num(el.ancho);
+    g += `<rect x="${r2(xe)}" y="${r2(h - z1)}" width="${r2(we)}" height="${r2(z1 - z0)}" fill="#e9dcc8" stroke="#8a5a2b" stroke-width="${sw}"/><text x="${r2(xe + we / 2)}" y="${r2(h - (z0 + z1) / 2)}" font-size="${r2(fs * 0.75)}" class="lbl" fill="#5c3a17">${esc(el.nombre)}</text>`;
+    if (z0 > 0.01) { // cota desde el piso hasta la base del elemento
+      const xc = xe + we * 0.15;
+      g += `<line x1="${r2(xc)}" y1="${r2(h)}" x2="${r2(xc)}" y2="${r2(h - z0)}" stroke="#8a5a2b" stroke-width="${r2(sw * 0.7)}" stroke-dasharray="0.08 0.06"/><text x="${r2(xc + fs * 0.55)}" y="${r2(h - z0 / 2)}" font-size="${r2(fs * 0.7)}" class="cota" fill="#8a5a2b" transform="rotate(-90 ${r2(xc + fs * 0.55)} ${r2(h - z0 / 2)})">${fmt(z0)}</text>`;
+    }
   }
   g += `<line x1="0" y1="${r2(h + pad * 0.45)}" x2="${r2(L)}" y2="${r2(h + pad * 0.45)}" stroke="var(--accent)" stroke-width="${sw}"/><text x="${r2(L / 2)}" y="${r2(h + pad * 0.85)}" font-size="${fs}" class="cota" fill="var(--accent)">${fmt(L)}</text>`;
   g += `<line x1="${r2(L + pad * 0.35)}" y1="0" x2="${r2(L + pad * 0.35)}" y2="${r2(h)}" stroke="var(--accent)" stroke-width="${sw}"/><text x="${r2(L + pad * 0.7)}" y="${r2(h / 2)}" font-size="${fs}" class="cota" fill="var(--accent)" transform="rotate(-90 ${r2(L + pad * 0.7)} ${r2(h / 2)})">${H ? fmt(H) : 'alto ?'}</text>`;
@@ -261,7 +265,7 @@ function abrirEspacio(espId) {
       <div class="card fig">${svgEspacio(s, o)}<div class="hint">Cotas con medidas de obra. Las que llevan * son del plano (aún sin medir). Naranja: no cuadra con el plano.</div></div>
       ${o && o.revisar.length ? `<div class="note">${o.revisar.map(esc).join('<br>')}</div>` : ''}
       <div class="eyebrow">Elementos dentro del espacio</div>
-      <div class="card" style="display:flex;flex-direction:column;gap:6px">${elementosDe(espId).map((el) => `<button type="button" class="muro-op" data-elem="${esc(el.id)}"><span class="badge-m" style="background:#8a5a2b">M${el.muro}</span><span class="mu-t"><b>${esc(el.nombre)}</b> · a ${fmt(num(el.pos))} m de la esquina</span><span class="num">${fmt(num(el.ancho))}×${fmt(num(el.fondo))}${num(el.alto) ? '×' + fmt(num(el.alto)) : ''}</span></button>`).join('') || '<span class="hint">Closets, mesones, tanques… lo que quieras mostrar en el plano y en el 3D.</span>'}
+      <div class="card" style="display:flex;flex-direction:column;gap:6px">${elementosDe(espId).map((el) => `<button type="button" class="muro-op" data-elem="${esc(el.id)}"><span class="badge-m" style="background:#8a5a2b">M${el.muro}</span><span class="mu-t"><b>${esc(el.nombre)}</b> · a ${fmt(num(el.pos))} m de la esquina${el.desde && el.desde !== 'piso' ? ' · ' + (el.desde === 'cielo' ? 'del cielo raso' : 'a ' + fmt(num(el.elev)) + ' m del piso') : ''}</span><span class="num">${fmt(num(el.ancho))}×${fmt(num(el.fondo))}${num(el.alto) ? '×' + fmt(num(el.alto)) : ''}</span></button>`).join('') || '<span class="hint">Closets, mesones, tanques… lo que quieras mostrar en el plano y en el 3D.</span>'}
         <button class="btn plano-btn" type="button" id="elAdd">+ Agregar elemento</button></div>
       <div class="eyebrow">Vistas de los muros</div>
       <div class="muros">${[1, 2, 3, 4].map((k) => { const v = vecino(ref.edif, s, k); return `<div class="card fig"><div class="mtit"><span class="badge-m">M${k}</span>${v ? `colinda con ${esc(v === 'exterior' ? 'el exterior' : corto(v))} · ` : ''}${(o && o.muros[k].vanos && o.muros[k].vanos.length) ? `${o.muros[k].vanos.length} vano(s)` : 'sin vanos'}</div>${svgMuro(s, o, k)}</div>`; }).join('')}</div>
@@ -387,6 +391,14 @@ function planoDelItem(cod) {
 /* ---------- Elementos dentro de un espacio (closets, mesones, tanques…) ---------- */
 const elementos = () => (S.cfg.elementos && S.cfg.elementos.lista) || [];
 const elementosDe = (espId) => elementos().filter((e) => e.esp === espId);
+// alturas del elemento: desde el piso, colgado del cielo raso o a una altura dada → [z0, z1]
+function alturaElemento(el, H) {
+  const al = num(el.alto) || 0.9;
+  if (el.desde === 'cielo') return [Math.max(0, H - al), H];
+  if (el.desde === 'altura') { const z0 = Math.min(H, num(el.elev)); return [z0, Math.min(H, z0 + al)]; }
+  return [0, Math.min(H, al)];
+}
+const DESDE_TXT = { piso: 'desde el piso', cielo: 'colgado del cielo raso', altura: 'a una altura' };
 // rectángulo del elemento en coordenadas del espacio (origen esquina inferior izquierda, y hacia arriba)
 function rectElemento(el, w, h) {
   const def = { 1: [w, 0, -1, 0, 0, 1], 2: [w, h, 0, -1, -1, 0], 3: [0, h, 1, 0, 0, -1], 4: [0, 0, 0, 1, 1, 0] }[el.muro || 1];
@@ -402,7 +414,8 @@ async function guardarElemento(el, borrar) {
 }
 function formElemento(espId, el, alListo) {
   const ref = espBy(espId); if (!ref) return;
-  const nuevo = !el; const d = el ? Object.assign({}, el) : { id: 'X' + uidGen(), esp: espId, nombre: '', muro: 1, pos: '', ancho: '', fondo: '', alto: '' };
+  const nuevo = !el; const d = el ? Object.assign({}, el) : { id: 'X' + uidGen(), esp: espId, nombre: '', muro: 1, pos: '', ancho: '', fondo: '', alto: '', desde: 'piso', elev: '' };
+  if (!d.desde) d.desde = 'piso';
   const host = document.createElement('div'); host.className = 'sheet'; host.style.zIndex = 62;
   document.body.appendChild(host);
   const pintar = () => {
@@ -416,18 +429,25 @@ function formElemento(espId, el, alListo) {
           <label class="f">Distancia desde la esquina izquierda (m)<input class="n" id="el_pos" inputmode="decimal" value="${esc(d.pos)}" placeholder="0.00"></label>
           <label class="f">Frente / ancho (m)<input class="n" id="el_ancho" inputmode="decimal" value="${esc(d.ancho)}" placeholder="0.00"></label>
           <label class="f">Fondo (m)<input class="n" id="el_fondo" inputmode="decimal" value="${esc(d.fondo)}" placeholder="0.00"></label>
-          <label class="f">Alto (m)<input class="n" id="el_alto" inputmode="decimal" value="${esc(d.alto)}" placeholder="0.00"></label>
+          <label class="f">Alto del elemento (m)<input class="n" id="el_alto" inputmode="decimal" value="${esc(d.alto)}" placeholder="0.00"></label>
         </div>
+        <div class="eyebrow">¿Desde dónde va?</div>
+        <div class="partes" role="group" aria-label="Desde dónde va"><button type="button" data-desde="piso" aria-pressed="${d.desde === 'piso'}">Desde el piso</button><button type="button" data-desde="cielo" aria-pressed="${d.desde === 'cielo'}">Desde el cielo raso</button><button type="button" data-desde="altura" aria-pressed="${d.desde === 'altura'}">A una altura</button></div>
+        ${d.desde === 'altura' ? `<label class="f">Altura desde el piso hasta la base (m)<input class="n" id="el_elev" inputmode="decimal" value="${esc(d.elev)}" placeholder="0.00"></label>` : ''}
+        <div class="hint">${d.desde === 'cielo' ? 'Ej. gabinete superior, bajante de cielo, ducto: va pegado al cielo raso y baja lo que digas en el alto.' : d.desde === 'altura' ? 'Ej. repisa, mesón volado, tanque elevado: queda suspendido a la altura que digas.' : 'Ej. closet, mesón, poyo: arranca del piso y sube lo que digas en el alto.'}</div>
         <div class="hint">La distancia se mide mirando el muro desde dentro del espacio. El elemento sale en el plano, en la vista del muro, en el PDF y en el 3D.</div>
         <div class="actions">${nuevo ? '' : '<button class="btn danger" type="button" id="elDel">Eliminar</button>'}<button class="btn pri" type="button" id="elOk">Guardar elemento</button></div>
       </div>`;
-    const leer = () => { ['nombre', 'pos', 'ancho', 'fondo', 'alto'].forEach((k) => { d[k] = $('#el_' + k, host).value.trim(); }); d.nombre = d.nombre.toUpperCase(); ['pos', 'ancho', 'fondo', 'alto'].forEach((k) => { d[k] = d[k].replace(',', '.'); }); };
+    const leer = () => { ['nombre', 'pos', 'ancho', 'fondo', 'alto', 'elev'].forEach((k) => { const i = $('#el_' + k, host); if (!i) return; const t = i.value.trim(); d[k] = k === 'nombre' ? t.toUpperCase() : t.replace(',', '.'); }); };
     $('#elBack', host).addEventListener('click', () => host.remove());
     host.querySelectorAll('[data-parte]').forEach((b) => b.addEventListener('click', () => { leer(); d.muro = Number(b.dataset.parte.slice(1)); pintar(); }));
+    host.querySelectorAll('[data-desde]').forEach((b) => b.addEventListener('click', () => { leer(); d.desde = b.dataset.desde; pintar(); }));
     $('#elOk', host).addEventListener('click', async () => {
       leer();
       if (!d.nombre) { toast('Escribe el nombre del elemento.'); return; }
       if (!(num(d.ancho) > 0 && num(d.fondo) > 0)) { toast('Escribe el frente y el fondo.'); return; }
+      if (d.desde !== 'piso' && !(num(d.alto) > 0)) { toast('Escribe el alto del elemento.'); return; }
+      if (d.desde === 'altura' && !(num(d.elev) > 0)) { toast('Escribe a qué altura del piso queda la base.'); return; }
       await guardarElemento(d); host.remove(); toast('Elemento guardado'); if (alListo) alListo();
     });
     const del = $('#elDel', host); if (del) del.addEventListener('click', async () => { await guardarElemento(d, true); host.remove(); toast('Elemento eliminado'); if (alListo) alListo(); });
