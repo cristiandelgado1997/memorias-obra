@@ -213,6 +213,7 @@ function dibujarPlantaEspacio(D, s, o, area, edif) {
     }
   }
   // caras de muros
+  for (const [a, b, c, d] of recortes(s)) { D.rellenoM(a, b, c, d, 60); D.grosor('gruesa'); D.rectM(a, b, c, d); }
   D.grosor('gruesa'); D.rectM(0, 0, w, h); D.grosor('media'); D.rectM(-e, -e, w + e, h + e);
   // elementos (closet: rectángulo con aspa)
   for (const el of elementosDe(s.id)) { const [a, b, c, d] = rectElemento(el, w, h); D.grosor('fina'); D.rectM(a, b, c, d); D.linea(a, b, c, d); D.linea(a, d, c, b); D.texto(MAY(el.nombre), D.X((a + c) / 2), D.Y((b + d) / 2) - 1.2, { pt: 5 }); D.texto(`${f2(num(el.ancho))}x${f2(num(el.fondo))}`, D.X((a + c) / 2), D.Y((b + d) / 2) + 1.4, { pt: 4.5 }); }
@@ -236,7 +237,7 @@ function dibujarPlantaEspacio(D, s, o, area, edif) {
   }
   // rótulo del espacio
   const cx = D.X(w / 2), cy = D.Y(h / 2);
-  D.texto(MAY(s.nombre), cx, cy - 1, { pt: 6.5, negrita: true }); D.texto(`A= ${f2(w * h)} m²`, cx, cy + 2.2, { pt: 5.5 });
+  D.texto(MAY(s.nombre), cx, cy - 1, { pt: 6.5, negrita: true }); D.texto(`A= ${f2(r.piso)} m²`, cx, cy + 2.2, { pt: 5.5 });
   if (r.alto) D.texto(`H= ${f2(r.alto)} m`, cx, cy + 4.8, { pt: 5.5 });
   if (o && o.revisar.length) { pdf.setDrawColor(200, 0, 0); D.grosor(0.25); D.nube(D.X(-e) - 2, D.Y(h + e) - 2, D.X(w + e) + 2, D.Y(-e) + 2, 2); D.color(); }
   const ty = by - 3;

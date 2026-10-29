@@ -6,6 +6,10 @@ const edificaciones = () => (S.cfg.planos && S.cfg.planos.lista) || [];
 const edifBy = (id) => edificaciones().find((e) => e.id === id);
 function espBy(id) { for (const e of edificaciones()) { const s = e.espacios.find((x) => x.id === id); if (s) return { edif: e, esp: s }; } return null; }
 const dimsPlano = (s) => ({ w: r2(s.x1 - s.x0), h: r2(s.y1 - s.y0) });
+// muescas: partes del rectángulo que no son del espacio (cuartos en L), en metros desde la esquina inferior izquierda [x0, y0, x1, y1]
+const recortes = (s) => ((s && s.recortes) || []).filter((r) => Array.isArray(r) && r.length === 4 && r[2] > r[0] && r[3] > r[1]);
+const areaRecortes = (s) => recortes(s).reduce((t, [a, b, c, d]) => t + (c - a) * (d - b), 0);
+const enRecorte = (s, u, v) => recortes(s).some(([a, b, c, d]) => u > a + 1e-6 && u < c - 1e-6 && v > b + 1e-6 && v < d - 1e-6);
 const largoMuro = (s, n) => (n === 1 || n === 3 ? dimsPlano(s).w : dimsPlano(s).h);
 const PARTES = [['piso', 'Piso'], ['cielo', 'Cielo'], ['m1', 'Muro 1'], ['m2', 'Muro 2'], ['m3', 'Muro 3'], ['m4', 'Muro 4'], ['otro', 'Otro']];
 const nombreParte = (p) => (PARTES.find((x) => x[0] === p) || [p, ''])[1];
@@ -85,7 +89,8 @@ function svgPlano(edif, opt = {}) {
   for (const s of edif.espacios) {
     const st = est[s.id] || 'vacio';
     const sel = opt.sel === s.id;
-    rects += `<rect data-esp="${s.id}" x="${s.x0}" y="${Y(s.y1)}" width="${r2(s.x1 - s.x0)}" height="${r2(s.y1 - s.y0)}" class="esp ${st}${sel ? ' sel' : ''}"><title>${esc(s.nombre)}</title></rect>`;
+    const huecos = recortes(s).map(([a, b, c, d]) => `M${r2(s.x0 + a)} ${Y(s.y0 + b)}V${Y(s.y0 + d)}H${r2(s.x0 + c)}V${Y(s.y0 + b)}Z`).join('');
+    rects += `<path data-esp="${s.id}" d="M${s.x0} ${Y(s.y0)}H${s.x1}V${Y(s.y1)}H${s.x0}Z${huecos}" fill-rule="evenodd" class="esp ${st}${sel ? ' sel' : ''}"><title>${esc(s.nombre)}</title></path>`;
   }
   let elems = '';
   for (const s of edif.espacios) for (const el of elementosDe(s.id)) {
@@ -118,6 +123,7 @@ function svgEspacio(s, o, opt = {}) {
   };
   const sw = r2(Math.max(w, h) / 45);
   let g = `<rect x="0" y="0" width="${r2(w)}" height="${r2(h)}" fill="var(--hatch)" stroke="var(--ink)" stroke-width="${sw}"/>`;
+  for (const [a, b, c, d] of recortes(s)) g += `<rect x="${r2(a)}" y="${r2(h - d)}" width="${r2(c - a)}" height="${r2(d - b)}" fill="var(--muted)" fill-opacity=".55" stroke="var(--ink)" stroke-width="${sw}"/>`;
   // vanos sobre los muros
   for (let k = 1; k <= 4; k++) {
     const vs = (o && o.muros[k].vanos) || []; const Lm = k === 1 || k === 3 ? w : h;
@@ -145,7 +151,7 @@ function svgEspacio(s, o, opt = {}) {
   const fs = r2(Math.min(Math.max(w, h) / 14, Math.min(w, h) / 6));
   const badge = (x, y, k) => `<circle cx="${r2(x)}" cy="${r2(y)}" r="${r2(fs * 0.8)}" fill="${opt.muroSel === k ? 'var(--amber)' : 'var(--accent)'}"/><text x="${r2(x)}" y="${r2(y)}" font-size="${r2(fs * 0.8)}" class="badge" fill="${opt.muroSel === k ? '#10161d' : '#fff'}">M${k}</text>`;
   g += badge(w / 2, h - fs * 1.2, 1) + badge(w - fs * 1.2, h / 2, 2) + badge(w / 2, fs * 1.2, 3) + badge(fs * 1.2, h / 2, 4);
-  g += `<text x="${r2(w / 2)}" y="${r2(h > w * 1.6 ? h / 2 - fs * 2.4 : h / 2)}" font-size="${fs}" class="area">${fmt(w * h)} m²</text>`;
+  g += `<text x="${r2(w / 2)}" y="${r2(h > w * 1.6 ? h / 2 - fs * 2.4 : h / 2)}" font-size="${fs}" class="area">${fmt(w * h - areaRecortes(s))} m²</text>`;
   if (opt.pick) {
     const hw = r2(Math.max(w, h) / 8);
     g += `<line data-parte="m1" x1="0" y1="${r2(h)}" x2="${r2(w)}" y2="${r2(h)}" class="hit" stroke-width="${hw}"/><line data-parte="m2" x1="${r2(w)}" y1="0" x2="${r2(w)}" y2="${r2(h)}" class="hit" stroke-width="${hw}"/><line data-parte="m3" x1="0" y1="0" x2="${r2(w)}" y2="0" class="hit" stroke-width="${hw}"/><line data-parte="m4" x1="0" y1="0" x2="0" y2="${r2(h)}" class="hit" stroke-width="${hw}"/>`;

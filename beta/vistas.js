@@ -16,12 +16,12 @@ function resumenEspacio(s, o) {
     const L = (o && largoObra(o, s, k)) ?? largoMuro(s, k); const A = o && (o.muros[k].alto || o.alto);
     if (A) { conAlto++; muros += L * A - ((o.muros[k].vanos || []).reduce((t, v) => t + v.ancho * v.alto, 0)); }
   }
-  return { P, w, h, W, H, piso: W * H, muros: conAlto ? muros : null, alto: o ? o.alto : null, verificado: w != null && h != null };
+  return { P, w, h, W, H, piso: W * H - areaRecortes(s), muros: conAlto ? muros : null, alto: o ? o.alto : null, verificado: w != null && h != null };
 }
 
 /* ---------- SVG → imagen (para el PDF) ---------- */
 const COLORES_EXP = { '--ink': '#15202b', '--panel': '#ffffff', '--accent': '#1d6fd8', '--warn': '#a35d00', '--amber': '#ffb020', '--hatch': '#f1f4f7', '--muted': '#5b6774' };
-const CSS_EXP = 'rect.elem{fill:#e9dcc8;stroke:#8a5a2b;stroke-width:.04}.ln-w{stroke:#15202b;stroke-width:.07}.ln-v{stroke:#d04a3a;stroke-width:.035}.ln-m{stroke:#5b6774;stroke-width:.018;opacity:.45}rect.esp{fill:none;stroke:none}rect.esp.medido{fill:rgba(29,111,216,.26);stroke:#1d6fd8;stroke-width:.09}rect.esp.revisar{fill:rgba(240,140,0,.34);stroke:#c26a00;stroke-width:.09}rect.esp.vacio{fill:rgba(138,150,163,.10);stroke:#8a96a3;stroke-width:.05}rect.esp.sel{stroke:#ffb020;stroke-width:.32}text{font-family:Arial,Helvetica,sans-serif}text.lbl{text-anchor:middle;dominant-baseline:middle;font-weight:700;fill:#15202b}text.cota{text-anchor:middle;dominant-baseline:middle;font-weight:700}text.badge{text-anchor:middle;dominant-baseline:central;font-weight:700}text.area{text-anchor:middle;dominant-baseline:middle;font-weight:700;fill:#15202b}line.hit{display:none}';
+const CSS_EXP = 'rect.elem{fill:#e9dcc8;stroke:#8a5a2b;stroke-width:.04}.ln-w{stroke:#15202b;stroke-width:.07}.ln-v{stroke:#d04a3a;stroke-width:.035}.ln-m{stroke:#5b6774;stroke-width:.018;opacity:.45}svg .esp{fill:none;stroke:none}svg .esp.medido{fill:rgba(29,111,216,.26);stroke:#1d6fd8;stroke-width:.09}svg .esp.revisar{fill:rgba(240,140,0,.34);stroke:#c26a00;stroke-width:.09}svg .esp.vacio{fill:rgba(138,150,163,.10);stroke:#8a96a3;stroke-width:.05}svg .esp.sel{stroke:#ffb020;stroke-width:.32}text{font-family:Arial,Helvetica,sans-serif}text.lbl{text-anchor:middle;dominant-baseline:middle;font-weight:700;fill:#15202b}text.cota{text-anchor:middle;dominant-baseline:middle;font-weight:700}text.badge{text-anchor:middle;dominant-baseline:central;font-weight:700}text.area{text-anchor:middle;dominant-baseline:middle;font-weight:700;fill:#15202b}line.hit{display:none}';
 function svgAImagen(svg, px) {
   let s = svg.replace(/var\((--[\w-]+)\)/g, (m, v) => COLORES_EXP[v] || '#000');
   const vb = /viewBox="([^"]+)"/.exec(s)[1].trim().split(/\s+/).map(Number);
@@ -144,7 +144,7 @@ function cajas3D(edif) {
   // 1. espacios con sus medidas de obra y vanos en coordenadas absolutas del plano
   const G = edif.espacios.map((s) => {
     const o = M[s.id]; const r = resumenEspacio(s, o);
-    const g = { s, o, x0: s.x0, y0: s.y0, x1: s.x0 + r.W, y1: s.y0 + r.H, w: r.W, h: r.H, ext: esExterior(s), muros: {} };
+    const g = { s, o, x0: s.x0, y0: s.y0, x1: s.x0 + r.W, y1: s.y0 + r.H, w: r.W, h: r.H, ext: esExterior(s), muros: {}, rec: recortes(s).map(([a, b, c, d]) => [s.x0 + a, s.y0 + b, s.x0 + c, s.y0 + d]) };
     for (let k = 1; k <= 4; k++) {
       const L = k === 1 || k === 3 ? g.w : g.h;
       const Hm = (o && (o.muros[k].alto || o.alto)) || null;
@@ -166,14 +166,27 @@ function cajas3D(edif) {
   for (const g of R) {
     for (const v of [g.x0, g.x1, g.x0 - EXT, g.x1 + EXT]) xs.add(+v.toFixed(4));
     for (const v of [g.y0, g.y1, g.y0 - EXT, g.y1 + EXT]) ys.add(+v.toFixed(4));
+    for (const [a, b, c, d] of g.rec) { for (const v of [a, c, a + EXT, c - EXT]) xs.add(+v.toFixed(4)); for (const v of [b, d, b + EXT, d - EXT]) ys.add(+v.toFixed(4)); }
     for (const k of [1, 3]) for (const v of g.muros[k].vanos) { xs.add(+v.a0.toFixed(4)); xs.add(+v.a1.toFixed(4)); }
     for (const k of [2, 4]) for (const v of g.muros[k].vanos) { ys.add(+v.a0.toFixed(4)); ys.add(+v.a1.toFixed(4)); }
   }
   // líneas a medio camino de cada hueco entre espacios, para repartir alturas
   const X = [...xs].sort((a, b) => a - b), Y = [...ys].sort((a, b) => a - b);
-  const dist = (g, x, y) => Math.max(g.x0 - x, 0, x - g.x1, g.y0 - y, 0, y - g.y1);
-  const lado = (g, x, y) => { const dx = Math.max(g.x0 - x, x - g.x1), dy = Math.max(g.y0 - y, y - g.y1); if (dy >= dx) return y < g.y0 ? 1 : 3; return x > g.x1 ? 2 : 4; };
-  const dentro = (g, x, y) => x > g.x0 + 1e-6 && x < g.x1 - 1e-6 && y > g.y0 + 1e-6 && y < g.y1 - 1e-6;
+  // muesca que contiene el punto (parte del rectángulo que no es del espacio) y sus bordes que dan hacia el espacio
+  const muesca = (g, x, y) => g.rec.find(([a, b, c, d]) => x > a + 1e-6 && x < c - 1e-6 && y > b + 1e-6 && y < d - 1e-6);
+  const bordesMuesca = (g, [a, b, c, d], x, y) => { const r = []; if (a > g.x0 + 1e-6) r.push([x - a, 2]); if (c < g.x1 - 1e-6) r.push([c - x, 4]); if (b > g.y0 + 1e-6) r.push([y - b, 3]); if (d < g.y1 - 1e-6) r.push([d - y, 1]); return r.sort((p, q) => p[0] - q[0]); };
+  const dist = (g, x, y) => { const n = muesca(g, x, y); if (n) { const b = bordesMuesca(g, n, x, y); return b.length ? b[0][0] : Infinity; } return Math.max(g.x0 - x, 0, x - g.x1, g.y0 - y, 0, y - g.y1); };
+  const lado = (g, x, y) => { const n = muesca(g, x, y); if (n) { const b = bordesMuesca(g, n, x, y); if (b.length) return b[0][1]; } const dx = Math.max(g.x0 - x, x - g.x1), dy = Math.max(g.y0 - y, y - g.y1); if (dy >= dx) return y < g.y0 ? 1 : 3; return x > g.x1 ? 2 : 4; };
+  const dentro = (g, x, y) => x > g.x0 + 1e-6 && x < g.x1 - 1e-6 && y > g.y0 + 1e-6 && y < g.y1 - 1e-6 && !muesca(g, x, y);
+  // rectángulos del piso: el rectángulo menos sus muescas
+  const partesPiso = (g) => {
+    if (!g.rec.length) return [[g.x0, g.y0, g.x1, g.y1]];
+    const xs2 = [...new Set([g.x0, g.x1, ...g.rec.flatMap(([a, , c]) => [a, c])])].filter((v) => v >= g.x0 && v <= g.x1).sort((p, q) => p - q);
+    const ys2 = [...new Set([g.y0, g.y1, ...g.rec.flatMap(([, b, , d]) => [b, d])])].filter((v) => v >= g.y0 && v <= g.y1).sort((p, q) => p - q);
+    const r = [];
+    for (let j = 0; j < ys2.length - 1; j++) { let i0 = null; for (let i = 0; i <= xs2.length - 1; i++) { const ok = i < xs2.length - 1 && dentro(g, (xs2[i] + xs2[i + 1]) / 2, (ys2[j] + ys2[j + 1]) / 2); if (ok && i0 == null) i0 = i; if (!ok && i0 != null) { r.push([xs2[i0], ys2[j], xs2[i], ys2[j + 1]]); i0 = null; } } }
+    return r;
+  };
   const celdas = [];
   for (let j = 0; j < Y.length - 1; j++) {
     const fila = [];
@@ -224,9 +237,13 @@ function cajas3D(edif) {
       out.push({ grupo: s.nombre, tipo: 'placa', estado, esp: s.id, nombre: s.nombre, c: [x0 + w / 2, Hs + 0.06, y0 + h / 2], d: [w, 0.12, h], rot: 0 });
       continue;
     }
-    out.push({ grupo: s.nombre, tipo: 'piso', estado, esp: s.id, nombre: s.nombre, c: [x0 + w / 2, -0.03, y0 + h / 2], d: [w, 0.06, h], rot: 0 });
     const Hc = (o && o.alto) || 2.4;
-    out.push({ grupo: s.nombre, tipo: 'cielo', esp: s.id, oculto: true, c: [x0 + w / 2, Hc + 0.01, y0 + h / 2], d: [w, 0.02, h], rot: 0 });
+    const partes = partesPiso(g); const mayor = partes.reduce((m, p, i) => ((p[2] - p[0]) * (p[3] - p[1]) > (partes[m][2] - partes[m][0]) * (partes[m][3] - partes[m][1]) ? i : m), 0);
+    const areaTotal = partes.reduce((t, p) => t + (p[2] - p[0]) * (p[3] - p[1]), 0);
+    partes.forEach(([a, b, c, d], i) => {
+      out.push({ grupo: s.nombre, tipo: 'piso', estado, esp: s.id, nombre: s.nombre, rotulo: i === mayor, area: areaTotal, c: [(a + c) / 2, -0.03, (b + d) / 2], d: [c - a, 0.06, d - b], rot: 0 });
+      out.push({ grupo: s.nombre, tipo: 'cielo', esp: s.id, oculto: true, c: [(a + c) / 2, Hc + 0.01, (b + d) / 2], d: [c - a, 0.02, d - b], rot: 0 });
+    });
     for (const el of elementosDe(s.id)) {
       const [a, b, c, d2] = rectElemento(el, w, h); const al = num(el.alto) || 0.9;
       out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', esp: s.id, c: [x0 + (a + c) / 2, al / 2, y0 + (b + d2) / 2], d: [c - a, al, d2 - b], rot: 0 });
@@ -380,11 +397,11 @@ async function abrir3D(edifId) {
   }
   // nombres de los espacios
   const rotulos = [];
-  for (const b of bs.filter((x) => x.tipo === 'piso' || x.tipo === 'placa')) {
+  for (const b of bs.filter((x) => (x.tipo === 'piso' && x.rotulo !== false) || x.tipo === 'placa')) {
     const c = document.createElement('canvas'); c.width = 512; c.height = 128; const g = c.getContext('2d');
     g.fillStyle = 'rgba(16,22,29,.82)'; const r = 20; g.beginPath(); g.moveTo(r, 0); g.arcTo(512, 0, 512, 128, r); g.arcTo(512, 128, 0, 128, r); g.arcTo(0, 128, 0, 0, r); g.arcTo(0, 0, 512, 0, r); g.fill();
     g.fillStyle = '#fff'; g.font = 'bold 44px Arial'; g.textAlign = 'center'; g.fillText(corto(b.nombre).slice(0, 20), 256, 58);
-    g.fillStyle = '#ffb020'; g.font = '34px Arial'; g.fillText(`${fmt(b.d[0] * b.d[2])} m²`, 256, 104);
+    g.fillStyle = '#ffb020'; g.font = '34px Arial'; g.fillText(`${fmt(b.area != null ? b.area : b.d[0] * b.d[2])} m²`, 256, 104);
     const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false }));
     const esc = Math.max(1.6, Math.min(4.5, Math.sqrt(b.d[0] * b.d[2]) / 2.2)); sp.scale.set(esc, esc / 4, 1);
