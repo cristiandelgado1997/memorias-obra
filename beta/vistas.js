@@ -376,7 +376,7 @@ async function abrir3D(edifId) {
     const mesh = new THREE.Mesh(geo, mat); mesh.position.set(b.c[0], b.c[1], -b.c[2]); mesh.rotation.y = b.rot;
     mesh.castShadow = b.tipo !== 'vidrio' && b.tipo !== 'cielo'; mesh.receiveShadow = true; mesh.visible = !b.oculto;
     mesh.userData = b; b.matBase = mat; scene.add(mesh); mallas.push(mesh);
-    if (b.tipo === 'muro' || b.tipo === 'elemento') { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), bordes); mesh.add(e); }
+    if (b.tipo === 'elemento') { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), bordes); mesh.add(e); }
   }
   // nombres de los espacios
   const rotulos = [];
