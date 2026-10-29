@@ -362,20 +362,61 @@ async function abrir3D(edifId) {
   $('#v3Modo', host).addEventListener('change', (e) => aplicarModo(e.target.value));
   $('#v3Nom', host).addEventListener('change', (e) => { rotulos.forEach((s) => (s.visible = e.target.checked)); ubicar(); });
   aplicarModo('real');
-  // girar con el dedo o el mouse; acercar con la rueda o pellizcando
-  const toques = new Map(); let dist0 = 0;
+  // Controles: 1 dedo gira · 2 dedos desplazan y acercan · mouse: izquierdo gira, derecho (o Ctrl) desplaza, rueda acerca
+  const toques = new Map(); let dist0 = 0, medio0 = null, botonDer = false;
   const el = renderer.domElement;
-  el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); toques.set(e.pointerId, [e.clientX, e.clientY]); if (toques.size === 2) { const [a, b] = [...toques.values()]; dist0 = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  const desplazar = (dx, dy) => {
+    const k = orb.r * 0.0016;
+    const fx = -Math.sin(orb.th), fz = Math.cos(orb.th); // eje lateral de la cámara
+    const ax = Math.cos(orb.th), az = Math.sin(orb.th);   // hacia la cámara, en el plano
+    centro.x += (-dx * fx + dy * ax) * k * -1; centro.z += (-dx * fz + dy * az) * k * -1;
+  };
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId); toques.set(e.pointerId, [e.clientX, e.clientY]);
+    botonDer = e.button === 2 || e.ctrlKey || e.shiftKey;
+    if (toques.size === 2) { const [a, b] = [...toques.values()]; dist0 = Math.hypot(a[0] - b[0], a[1] - b[1]); medio0 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
+  });
   el.addEventListener('pointermove', (e) => {
     if (!toques.has(e.pointerId)) return;
     const prev = toques.get(e.pointerId); toques.set(e.pointerId, [e.clientX, e.clientY]);
-    if (toques.size === 1) { orb.th += (e.clientX - prev[0]) * 0.008; orb.ph = Math.min(1.5, Math.max(0.12, orb.ph - (e.clientY - prev[1]) * 0.008)); }
-    else if (toques.size === 2) { const [a, b] = [...toques.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (dist0) orb.r = Math.min(tam * 4, Math.max(2, orb.r * dist0 / d)); dist0 = d; }
+    if (toques.size === 1 && botonDer) desplazar(e.clientX - prev[0], e.clientY - prev[1]);
+    else if (toques.size === 1) { orb.th += (e.clientX - prev[0]) * 0.008; orb.ph = Math.min(1.5, Math.max(0.12, orb.ph - (e.clientY - prev[1]) * 0.008)); }
+    else if (toques.size === 2) {
+      const [a, b] = [...toques.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (dist0) orb.r = Math.min(tam * 4, Math.max(1.5, orb.r * dist0 / d));
+      if (medio0) desplazar(m[0] - medio0[0], m[1] - medio0[1]);
+      dist0 = d; medio0 = m;
+    }
     ubicar();
   });
-  const soltar = (e) => { toques.delete(e.pointerId); dist0 = 0; };
+  const soltar = (e) => { toques.delete(e.pointerId); dist0 = 0; medio0 = null; if (!toques.size) botonDer = false; };
   el.addEventListener('pointerup', soltar); el.addEventListener('pointercancel', soltar);
-  el.addEventListener('wheel', (e) => { e.preventDefault(); orb.r = Math.min(tam * 4, Math.max(2, orb.r * (e.deltaY > 0 ? 1.1 : 0.9))); ubicar(); }, { passive: false });
+  el.addEventListener('wheel', (e) => { e.preventDefault(); orb.r = Math.min(tam * 4, Math.max(1.5, orb.r * (e.deltaY > 0 ? 1.1 : 0.9))); ubicar(); }, { passive: false });
+  // doble toque sobre un espacio: acercarse a él
+  const ray = new THREE.Raycaster(); let ultimoToque = 0;
+  el.addEventListener('pointerup', (e) => {
+    const ahora = Date.now(); if (ahora - ultimoToque > 320) { ultimoToque = ahora; return; } ultimoToque = 0;
+    const r = el.getBoundingClientRect(); ray.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, cam);
+    const hit = ray.intersectObjects(mallas.filter((m) => m.visible && m.userData.tipo === 'piso'))[0];
+    if (hit) { const b = hit.object.userData; centro.set(b.c[0], 0, -b.c[2]); orb.r = Math.max(4, Math.sqrt(b.d[0] * b.d[2]) * 1.6); ubicar(); toast(b.nombre); }
+  });
+  // botones flotantes
+  const inicial = { x: centro.x, z: centro.z, th: orb.th, ph: orb.ph, r: orb.r };
+  const bot = document.createElement('div'); bot.className = 'v3-botones';
+  bot.innerHTML = `<button type="button" data-a="mas" aria-label="Acercar">+</button><button type="button" data-a="menos" aria-label="Alejar">−</button><button type="button" data-a="planta" aria-label="Ver desde arriba">⬒</button><button type="button" data-a="inicio" aria-label="Volver a la vista inicial">⟲</button>`;
+  box.appendChild(bot);
+  bot.addEventListener('click', (e) => {
+    const a = e.target.closest('button'); if (!a) return;
+    if (a.dataset.a === 'mas') orb.r = Math.max(1.5, orb.r * 0.8);
+    if (a.dataset.a === 'menos') orb.r = Math.min(tam * 4, orb.r * 1.25);
+    if (a.dataset.a === 'planta') { orb.ph = 0.12; }
+    if (a.dataset.a === 'inicio') { centro.x = inicial.x; centro.z = inicial.z; orb.th = inicial.th; orb.ph = inicial.ph; orb.r = inicial.r; }
+    ubicar();
+  });
+  const ayuda = document.createElement('div'); ayuda.className = 'v3-ayuda';
+  ayuda.textContent = matchMedia('(pointer: coarse)').matches ? '1 dedo: girar · 2 dedos: mover y acercar · doble toque en un espacio: ir a él' : 'Clic izquierdo: girar · clic derecho o Ctrl: mover · rueda: acercar · doble clic en un espacio: ir a él';
+  box.appendChild(ayuda); setTimeout(() => { ayuda.style.opacity = '0'; }, 6000);
   const ajustar = () => { if (!vivo) return; renderer.setSize(W(), H()); cam.aspect = W() / H(); cam.updateProjectionMatrix(); ubicar(); };
   addEventListener('resize', ajustar);
 }

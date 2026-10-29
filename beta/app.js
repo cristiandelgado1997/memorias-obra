@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.3.0';
+const VERSION = 'beta 0.3.1';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
