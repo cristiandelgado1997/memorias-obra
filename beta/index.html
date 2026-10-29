@@ -93,6 +93,11 @@ nav.tabs button[aria-current="true"]{color:var(--accent)}
 .med .thumbs img{width:48px;height:48px;object-fit:cover;border-radius:6px}
 .tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn)}
 .tag.desc{background:var(--bad-soft);color:var(--bad)}
+.tag.bal{background:rgba(29,111,216,.12);color:var(--accent)}
+.tag.obra{background:var(--ok-soft);color:var(--ok)}
+.tag.lock{background:#e9ecef;color:#3b4652}
+.partes.dest button{display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.15}
+.partes.dest small{font-weight:500;font-size:11px;opacity:.75}
 .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:45;border:0;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:16px;padding:14px 24px;border-radius:999px;box-shadow:0 6px 18px rgba(0,0,0,.22);display:flex;align-items:center;gap:8px;cursor:pointer}
 label.f{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--muted);min-width:0}
 label.f input,label.f select,label.f textarea{padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:17px;font-weight:500;color:var(--ink);width:100%;min-width:0}
@@ -232,6 +237,7 @@ details summary{cursor:pointer;font-weight:600;font-size:14px}
 <script src="plano.js"></script>
 <script src="vistas.js"></script>
 <script src="planos-cad.js"></script>
+<script src="cierres.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

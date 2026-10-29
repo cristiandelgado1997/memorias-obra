@@ -47,6 +47,8 @@ function buildWorkbook(ExcelJS, ctx) {
   const F9B = { name: 'Calibri', size: 9, bold: true };
   const GRIS = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
   const AMAR = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+  const NARANJA = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8CBAD' } };
+  const exced = new Set(ctx.mode === 'acta' ? (ctx.excedidos || []) : []);
   const QF = '#,##0.00';
   const MF = '"$" #,##0.00';
   const etiquetaDoc = ctx.mode === 'balance' ? 'BALANCE' : ctx.mode === 'acta' ? `ACTA PARCIAL No. ${ctx.actaNo || ''}` : `CORTE No. ${ctx.actaNo || ''}`;
@@ -222,6 +224,7 @@ function buildWorkbook(ExcelJS, ctx) {
   if (ctx.mode === 'corte') filaInfo('SUBCONTRATISTA', ctx.subNombre || '');
   else filaInfo('SUPERVISOR', P.supervisor);
   filaInfo('PERIODO', (ctx.desde ? ctx.desde + ' a ' : 'Hasta ') + fechaDoc);
+  if (exced.size) filaInfo('NOTA', 'Ítems resaltados en naranja: la cantidad ejecutada acumulada supera la del balance.');
   rr++;
 
   const hdrs = ctx.mode === 'corte'
@@ -308,7 +311,8 @@ function buildWorkbook(ExcelJS, ctx) {
       cell(R, `F${rr}`, x.vu, { fmt: MF });
       cell(R, `G${rr}`, ant, { fmt: QF });
       cell(R, `H${rr}`, qRef, { fmt: QF, fill: t ? AMAR : undefined });
-      cell(R, `I${rr}`, { formula: `G${rr}+H${rr}`, result: r2(ant + q) }, { fmt: QF });
+      cell(R, `I${rr}`, { formula: `G${rr}+H${rr}`, result: r2(ant + q) }, { fmt: QF, fill: exced.has(x.cod) ? NARANJA : undefined });
+      if (exced.has(x.cod)) { R.getCell(`B${rr}`).fill = NARANJA; R.getCell(`L${rr}`).fill = NARANJA; }
       const j = Math.round(q * x.vu * 100) / 100, k = Math.round((ant + q) * x.vu * 100) / 100;
       cell(R, `J${rr}`, { formula: `ROUND(H${rr}*F${rr},2)`, result: j }, { fmt: MF });
       cell(R, `K${rr}`, { formula: `ROUND(I${rr}*F${rr},2)`, result: k }, { fmt: MF });

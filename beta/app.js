@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.3.7';
+const VERSION = 'beta 0.4.0';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -36,7 +36,7 @@ const DB = (() => {
 
 /* ---------- Estado ---------- */
 const S = {
-  medidas: {}, cfg: { proyecto: {}, subs: [], ubic: [], tipos: {}, extras: [], presupuesto: null, planos: null, elementos: null },
+  medidas: {}, cfg: { proyecto: {}, subs: [], ubic: [], tipos: {}, extras: [], presupuesto: null, planos: null, elementos: null, cierres: null, director: null },
   outbox: [], conn: { url: '', clave: '' }, nombre: '', ultimoPull: 0,
   tab: 'items', q: '', syncing: false, syncErr: '', online: navigator.onLine, ultimaSync: 0,
 };
@@ -239,7 +239,7 @@ function renderItems(main) {
     main.innerHTML = `<div class="empty"><b>Aún no hay presupuesto cargado.</b><br><br>${S.conn.url ? 'Si alguien ya lo cargó, toca <b>Sincronizar</b> en Ajustes cuando tengas señal.' : 'Primero conecta la app con el servidor en <b>Ajustes</b>.'}<br>El director lo carga una sola vez desde Ajustes → <b>Presupuesto</b>, eligiendo el Excel del contrato.</div>`;
     return;
   }
-  const tot = totalesPorItem();
+  const totE = totalesDest('obra'), totB = totalesDest('balance');
   const q = S.q.trim().toLowerCase();
   if (!$('#q', main)) {
     main.innerHTML = `<div id="offAviso"></div><input class="search" id="q" type="search" placeholder="Buscar ítem: 2,1,5 · estuco · tubería…" autocomplete="off"><div id="itemsList"></div>`;
@@ -257,11 +257,11 @@ function renderItems(main) {
     }
     if (q && !(x.cod.toLowerCase().includes(q) || x.desc.toLowerCase().includes(q))) continue;
     h += pend.join(''); pend = []; n++;
-    const t = tot[x.cod] || 0; const pct = x.cant ? t / x.cant : 0;
+    const t = totE[x.cod] || 0; const rf = referenciaItem(x.cod, totB); const pct = rf.q ? t / rf.q : (t ? 2 : 0);
     h += `<button class="it" type="button" data-cod="${esc(x.cod)}">
       <div><div class="cod">${esc(x.cod)}</div><div class="und">${esc(x.und)}</div></div>
       <div class="d">${esc(x.desc)}</div>
-      <div class="bar"><span class="track"><i class="${pct > 1 ? 'over' : ''}" style="width:${Math.min(100, pct * 100).toFixed(1)}%"></i></span><span class="num">${fmt(t)} / ${fmt(x.cant)}</span></div>
+      <div class="bar"><span class="track"><i class="${pct > 1 ? 'over' : ''}" style="width:${Math.min(100, pct * 100).toFixed(1)}%"></i></span><span class="num">${fmt(t)} / ${fmt(rf.q)}${rf.de === 'balance' ? ' <small>B</small>' : ''}</span></div>
     </button>`;
   }
   if (!n) h = `<div class="empty" style="margin-top:14px">Ningún ítem coincide con “${esc(S.q)}”.</div>`;
@@ -277,7 +277,7 @@ function filaMedida(m, conItem, pend) {
   const thumbs = Object.values(m.thumbs || {});
   const nf = (m.fotos || []).length;
   return `<button class="med" type="button" data-id="${esc(m.id)}">
-    <div class="t">${conItem ? `<span class="num">${esc(m.item)}</span> · ` : ''}${esc(m.elem || 'Sin elemento')} ${m.desc ? '<span class="tag desc">Descuento</span>' : ''} ${pend.has(m.id) ? '<span class="tag">Sin subir</span>' : ''}</div>
+    <div class="t">${conItem ? `<span class="num">${esc(m.item)}</span> · ` : ''}${esc(m.elem || 'Sin elemento')} ${destDe(m) === 'balance' ? '<span class="tag bal">Balance</span>' : '<span class="tag obra">Ejecutada</span>'} ${m.desc ? '<span class="tag desc">Descuento</span>' : ''} ${pend.has(m.id) ? '<span class="tag">Sin subir</span>' : ''} ${(() => { const c = bloqueoDe(m); return c ? `<span class="tag lock">🔒 ${esc(nombreCierre(c))}</span>` : ''; })()}</div>
     <div class="v ${v < 0 ? 'neg' : ''}">${fmt(v)} <small>${esc(it.und || '')}</small></div>
     <div class="m"><span>${esc((m.ubic || '').toUpperCase())}</span><span class="num">${esc(dims.join(' · '))}</span><span>${esc(m.fecha || '')}</span>${sub ? `<span>Sub: ${esc(sub)}</span>` : ''}${m.autor ? `<span>${esc(m.autor)}</span>` : ''}${nf && !thumbs.length ? `<span>📷 ${nf}</span>` : ''}</div>
     ${thumbs.length ? `<div class="thumbs">${thumbs.slice(0, 5).map((t) => `<img src="${t}" alt="">`).join('')}</div>` : ''}
@@ -305,9 +305,13 @@ function pintarItem(cod) {
   const it = itemBy(cod); if (!it) { cerrarHoja(); return; }
   const tipo = tipoDe(cod);
   const ms = vivas().filter((m) => m.item === cod).sort((a, b) => (a.ubic || '').localeCompare(b.ubic || '') || (b.creado || 0) - (a.creado || 0));
-  const tot = ms.reduce((s, m) => s + calcMedida(tipo, m), 0);
-  const grupos = {}; ms.forEach((m) => { const k = (m.ubic || 'SIN UBICACIÓN').toUpperCase(); grupos[k] = (grupos[k] || 0) + calcMedida(tipo, m); });
-  const dif = tot - it.cant;
+  const totB = ms.filter((m) => destDe(m) === 'balance').reduce((s, m) => s + calcMedida(tipo, m), 0);
+  const totE = ms.filter((m) => destDe(m) === 'obra').reduce((s, m) => s + calcMedida(tipo, m), 0);
+  const hayBal = ms.some((m) => destDe(m) === 'balance');
+  const ref = hayBal ? totB : it.cant; const pasa = totE > ref + 0.005;
+  if (!S.verDest) S.verDest = 'todas';
+  const vistas = ms.filter((m) => S.verDest === 'todas' || destDe(m) === S.verDest);
+  const grupos = {}; vistas.forEach((m) => { const k = (m.ubic || 'SIN UBICACIÓN').toUpperCase() + (S.verDest === 'todas' ? (destDe(m) === 'balance' ? ' · BALANCE' : ' · EJECUTADA') : ''); grupos[k] = (grupos[k] || 0) + calcMedida(tipo, m); });
   const pend = pendientes();
   const scroll = el.scrollTop;
   el.innerHTML = `<div class="bar gut"><button class="iconbtn" type="button" id="back" aria-label="Volver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg></button><h2><span class="num">${esc(cod)}</span> · ${esc(it.und)}</h2></div>
@@ -315,20 +319,23 @@ function pintarItem(cod) {
     <div class="card">
       <details><summary>Descripción del ítem</summary><p class="desc">${esc(it.desc)}</p></details>
       <div class="stats" style="margin-top:12px">
-        <div class="stat"><b>${fmt(tot)}</b><span>Medido</span></div>
         <div class="stat"><b>${fmt(it.cant)}</b><span>Contrato</span></div>
-        <div class="stat"><b style="color:${dif > 0 ? 'var(--warn)' : 'var(--ink)'}">${dif > 0 ? '+' : ''}${fmt(dif)}</b><span>${dif > 0 ? 'Mayor cant.' : 'Por ejecutar'}</span></div>
+        <div class="stat"><b>${hayBal ? fmt(totB) : '—'}</b><span>Balance</span></div>
+        <div class="stat"><b style="color:${pasa ? 'var(--warn)' : 'var(--ink)'}">${fmt(totE)}</b><span>Ejecutado</span></div>
       </div>
+      ${pasa ? `<div class="note" style="margin-top:10px">Lo ejecutado supera ${hayBal ? 'el balance' : 'la cantidad del contrato'} en <b class="num">${fmt(totE - ref)} ${esc(it.und)}</b>. Se puede seguir cobrando, pero revisa si hay que ajustar el balance.</div>` : `<div class="hint" style="margin-top:8px">Por ejecutar según ${hayBal ? 'el balance' : 'el contrato'}: <b class="num">${fmt(ref - totE)} ${esc(it.und)}</b></div>`}
     </div>
     ${planoDelItem(cod)}
     <label class="f">Forma de medir este ítem
       <select id="tipoSel">${Object.entries(TIPOS).map(([k, t]) => `<option value="${k}" ${k === tipo ? 'selected' : ''}>${t.nom}</option>`).join('')}</select>
     </label>
+    ${ms.length ? `<div class="seg" role="group" aria-label="Ver medidas">${[['todas', 'Todas'], ['balance', 'Balance'], ['obra', 'Ejecutada']].map(([k, t]) => `<button type="button" data-ver="${k}" aria-pressed="${S.verDest === k}">${t}</button>`).join('')}</div>` : ''}
     ${Object.keys(grupos).length ? `<div class="card">${Object.entries(grupos).map(([k, v]) => `<div class="grp"><span>${esc(k)}</span><b class="num">${fmt(v)}</b></div>`).join('')}</div>` : ''}
-    ${ms.length ? `<div class="list">${ms.map((m) => filaMedida(m, false, pend)).join('')}</div>` : `<div class="empty">Sin medidas todavía. Toca <b>Agregar medida</b> para registrar la primera.</div>`}
+    ${ms.length ? `<div class="list">${vistas.map((m) => filaMedida(m, false, pend)).join('')}</div>` : `<div class="empty">Sin medidas todavía. Toca <b>Agregar medida</b> para registrar la primera.</div>`}
   </div>`;
   el.scrollTop = scroll;
   $('#back', el).addEventListener('click', cerrarHoja);
+  el.querySelectorAll('[data-ver]').forEach((b) => b.addEventListener('click', () => { S.verDest = b.dataset.ver; pintarItem(cod); }));
   $('#tipoSel', el).addEventListener('change', (e) => guardarConfig('tipos', Object.assign({}, S.cfg.tipos, { [cod]: e.target.value })));
   el.querySelectorAll('.med').forEach((b) => b.addEventListener('click', () => abrirMedida(cod, S.medidas[b.dataset.id])));
   const mp = el.querySelector('[data-item-plano]');
@@ -340,7 +347,9 @@ function abrirMedida(cod, m) {
   const it = itemBy(cod); const tipo = tipoDe(cod); const T = TIPOS[tipo];
   const nuevo = !m;
   const last = S.ultima || {};
-  const d = m ? JSON.parse(JSON.stringify(m)) : { id: uidGen(), item: cod, ubic: last.ubic || '', esp: last.esp || '', parte: '', vanoPos: '', vanoSill: '', vanoTipo: '', elem: '', a: '', b: '', c: '', n: '', desc: false, fecha: last.fecha || hoy(), sub: last.sub || '', obs: '', fotos: [], thumbs: {} };
+  const d = m ? JSON.parse(JSON.stringify(m)) : { id: uidGen(), item: cod, ubic: last.ubic || '', esp: last.esp || '', parte: '', vanoPos: '', vanoSill: '', vanoTipo: '', elem: '', a: '', b: '', c: '', n: '', desc: false, fecha: last.fecha || hoy(), sub: last.sub || '', obs: '', fotos: [], thumbs: {}, dest: last.dest || lsGet('mo-dest') || 'obra' };
+  d.dest = destDe(d);
+  const lock = m ? bloqueoDe(m) : null; const soloVer = lock && !S.esDirector;
   d.thumbs = d.thumbs || {}; d.fotos = d.fotos || [];
   const nuevasFotos = {}; const quitadas = [];
   const prevSheet = S.sheetRender;
@@ -357,6 +366,9 @@ function abrirMedida(cod, m) {
   host.innerHTML = `<div class="bar gut"><button class="iconbtn" type="button" id="mBack" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg></button><h2>${nuevo ? 'Nueva medida' : 'Editar medida'} · <span class="num">${esc(cod)}</span></h2></div>
   <form class="content gut" id="mForm" novalidate>
     <div class="hint">${esc(it.desc.slice(0, 120))}${it.desc.length > 120 ? '…' : ''}</div>
+    ${lock ? `<div class="note ${soloVer ? 'bad' : ''}"><b>Ya se cobró en ${esc(nombreCierre(lock))}</b> (cerrado el ${esc(lock.fecha)}). ${soloVer ? 'No se puede modificar ni eliminar; solo el director puede corregirla.' : 'Estás corrigiendo como director: el cambio queda registrado y la diferencia sale en la próxima acta o corte.'}</div>` : ''}
+    <div class="eyebrow">¿Para qué es esta medida?</div>
+    <div class="partes dest" role="group" aria-label="Para qué es esta medida"><button type="button" data-dest="balance" aria-pressed="${d.dest === 'balance'}">Balance<small>lo que el proyecto va a tener</small></button><button type="button" data-dest="obra" aria-pressed="${d.dest === 'obra'}">Obra ejecutada<small>lo ya hecho · actas y cortes</small></button></div>
     <label class="f">Ubicación<input id="f_ubic" list="dlUbic" autocomplete="off" placeholder="Ej. ALOJAMIENTO PRETAC" value="${esc(d.ubic)}"></label>
     <datalist id="dlUbic">${ubics.map((u) => `<option value="${esc(u)}">`).join('')}</datalist>
     <div id="espBox"></div>
@@ -376,16 +388,18 @@ function abrirMedida(cod, m) {
     <div class="result" id="res"><span>Resultado</span><b>0.00 ${esc(it.und)}</b></div>
     <div class="grid2">
       <label class="f">Fecha<input type="date" id="f_fecha" value="${esc(d.fecha)}"></label>
-      <label class="f">Subcontratista<select id="f_sub"><option value="">Ninguno</option>${S.cfg.subs.map((s) => `<option value="${esc(s.id)}" ${d.sub === s.id ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>
+      <label class="f" id="subBox" ${d.dest === 'balance' ? 'hidden' : ''}>Subcontratista<select id="f_sub"><option value="">Ninguno</option>${S.cfg.subs.map((s) => `<option value="${esc(s.id)}" ${d.sub === s.id ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>
     </div>
     <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600;color:var(--muted)">Fotos de soporte</span>
       <div class="photos" id="phs"></div>
       <input type="file" id="f_foto" accept="image/*" multiple hidden>
     </div>
     <label class="f">Observación<textarea id="f_obs" rows="2" placeholder="Opcional">${esc(d.obs)}</textarea></label>
+    ${lock && !soloVer ? '<label class="f">Motivo de la corrección<textarea id="f_motivo" rows="2" placeholder="Obligatorio. Ej. se midió mal el largo del muro"></textarea></label>' : ''}
+    ${(d.historial || []).length ? `<details class="card"><summary>Historial de correcciones (${d.historial.length})</summary>${d.historial.map((h) => `<div class="hint" style="margin-top:6px"><b>${esc(new Date(h.fecha).toLocaleString('es-CO'))}</b> · ${esc(h.por || '')} · ${esc(h.cierre || '')}<br>${esc(h.motivo || '')}${h.antes ? `<br>Antes: ${esc([h.antes.a, h.antes.b, h.antes.c, h.antes.n].filter((x) => x !== '' && x != null).join(' × '))}${h.antes.desc ? ' (descuento)' : ''}` : ''}${h.borrada ? '<br>Medida eliminada' : ''}</div>`).join('')}</details>` : ''}
     <div class="actions">
-      ${nuevo ? '<button class="btn" type="button" id="saveMore">Guardar y otra</button>' : '<button class="btn danger" type="button" id="del">Eliminar</button>'}
-      <button class="btn pri" type="submit">Guardar</button>
+      ${soloVer ? '<button class="btn pri" type="button" id="corregir">Corregir (director)</button>' : `${nuevo ? '<button class="btn" type="button" id="saveMore">Guardar y otra</button>' : '<button class="btn danger" type="button" id="del">Eliminar</button>'}
+      <button class="btn pri" type="submit">Guardar</button>`}
     </div>
     <div id="delConfirm"></div>
   </form>`;
@@ -467,6 +481,10 @@ function abrirMedida(cod, m) {
     recalcular();
   }));
   if (d.vanoTipo === 'puerta') $('#sillBox', host).hidden = true;
+  host.querySelectorAll('[data-dest]').forEach((b) => b.addEventListener('click', () => {
+    d.dest = b.dataset.dest; host.querySelectorAll('[data-dest]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    $('#subBox', host).hidden = d.dest === 'balance';
+  }));
   pintarEsp();
   const pintarFotos = () => {
     const ph = $('#phs', host);
@@ -502,11 +520,17 @@ function abrirMedida(cod, m) {
     if (v === 0) { toast('Faltan medidas: el resultado es 0.'); return; }
     const raras = ['a', 'b', 'c'].filter((k) => tipo !== 'ACERO' && Number(d[k]) > 150);
     if (raras.length && !host.dataset.okRaro) { host.dataset.okRaro = '1'; toast('Hay una medida mayor a 150 m. Revisa la coma; si está bien, toca Guardar otra vez.'); return; }
+    let historial = d.historial || [];
+    if (lock) {
+      const motivo = (($('#f_motivo', host) || {}).value || '').trim();
+      if (!motivo) { toast('Escribe el motivo de la corrección.'); $('#f_motivo', host).focus(); return; }
+      historial = historial.concat({ fecha: Date.now(), por: S.nombre || '', cierre: nombreCierre(lock), motivo, antes: valMed(m) });
+    }
     for (const [fid, data] of Object.entries(nuevasFotos)) await guardarFoto(fid, data, d.id, cod);
     for (const fid of quitadas) await encolar({ tipo: 'fotoDel', id: fid });
-    const body = { id: d.id, item: cod, ubic: d.ubic, elem: (d.elem || '').trim(), a: d.a, b: d.b, c: d.c, n: d.n, desc: d.desc, esp: d.esp || '', parte: d.esp ? (d.parte || '') : '', vanoPos: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoPos || '') : '', vanoSill: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo === 'puerta' ? '0' : (d.vanoSill || '')) : '', vanoTipo: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo || '') : '', fecha: d.fecha || hoy(), sub: d.sub || '', obs: (d.obs || '').trim(), fotos: d.fotos, thumbs: d.thumbs, autor: d.autor || S.nombre || '', creado: d.creado || Date.now(), editado: Date.now(), editadoPor: S.nombre || '' };
+    const body = { id: d.id, item: cod, ubic: d.ubic, elem: (d.elem || '').trim(), a: d.a, b: d.b, c: d.c, n: d.n, desc: d.desc, esp: d.esp || '', parte: d.esp ? (d.parte || '') : '', vanoPos: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoPos || '') : '', vanoSill: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo === 'puerta' ? '0' : (d.vanoSill || '')) : '', vanoTipo: d.esp && /^m[1-4]$/.test(d.parte || '') && d.desc ? (d.vanoTipo || '') : '', fecha: d.fecha || hoy(), sub: d.dest === 'balance' ? '' : (d.sub || ''), dest: d.dest, historial, obs: (d.obs || '').trim(), fotos: d.fotos, thumbs: d.thumbs, autor: d.autor || S.nombre || '', creado: d.creado || Date.now(), editado: Date.now(), editadoPor: S.nombre || '' };
     await guardarMedida(body, false);
-    S.ultima = { ubic: d.ubic, fecha: d.fecha, sub: d.sub, esp: d.esp || '' };
+    S.ultima = { ubic: d.ubic, fecha: d.fecha, sub: d.sub, esp: d.esp || '', dest: d.dest }; lsSet('mo-dest', d.dest);
     toast(navigator.onLine && S.conn.url ? 'Medida guardada' : 'Guardada en el celular · se subirá con señal');
     cerrar();
     if (seguir) abrirMedida(cod, null);
@@ -518,10 +542,17 @@ function abrirMedida(cod, m) {
     $('#delConfirm', host).innerHTML = `<div class="note bad" style="display:flex;gap:10px;align-items:center;justify-content:space-between">¿Eliminar esta medida y sus fotos? <button type="button" class="btn danger" id="delYes">Sí, eliminar</button></div>`;
     $('#delYes', host).addEventListener('click', async () => {
       for (const f of d.fotos) await encolar({ tipo: 'fotoDel', id: f });
-      await guardarMedida(Object.assign({}, m, { editado: Date.now(), editadoPor: S.nombre || '' }), true);
+      let historial = m.historial || [];
+      if (lock) { const motivo = (($('#f_motivo', host) || {}).value || '').trim(); if (!motivo) { toast('Escribe el motivo antes de eliminar.'); return; } historial = historial.concat({ fecha: Date.now(), por: S.nombre || '', cierre: nombreCierre(lock), motivo, antes: valMed(m), borrada: true }); }
+      await guardarMedida(Object.assign({}, m, { historial, editado: Date.now(), editadoPor: S.nombre || '' }), true);
       toast('Medida eliminada'); cerrar();
     });
   });
+  if (soloVer) {
+    host.querySelectorAll('#mForm input, #mForm select, #mForm textarea, #mForm button:not(#corregir)').forEach((e) => { if (e.tagName !== 'SUMMARY') e.disabled = true; });
+    host.querySelectorAll('.photos .x, #addph').forEach((e) => { e.hidden = true; });
+    $('#corregir', host).addEventListener('click', async () => { if (await pedirDirector('Para corregir una medida que ya se cobró.')) { cerrar(); abrirMedida(cod, S.medidas[m.id]); } });
+  }
   setTimeout(() => { if (nuevo) { const f = $(d.ubic ? '#f_elem' : '#f_ubic', host); if (f) f.focus(); } }, 60);
 }
 function verFoto(src) {
@@ -538,67 +569,101 @@ async function entregarArchivo(blob, nombre) {
 }
 
 /* ---------- Exportar ---------- */
-const EX = { mode: 'balance', desde: '', hasta: hoy(), actaNo: 1, sub: '', fotos: true, busy: false, msg: '', archivo: null };
-function medidasExport() {
-  return vivas().filter((m) => (!EX.hasta || (m.fecha || '') <= EX.hasta) && (EX.mode === 'balance' || !EX.desde || (m.fecha || '') >= EX.desde) && (EX.mode !== 'corte' || m.sub === EX.sub));
+const EX = { mode: 'balance', hasta: hoy(), sub: '', fotos: true, busy: false, msg: '', archivo: null, generado: null, verVers: false };
+// qué entra en el documento elegido
+function docActual() {
+  if (EX.mode === 'balance') {
+    const ms = vivas().filter((m) => destDe(m) === 'balance' && (!EX.hasta || (m.fecha || '') <= EX.hasta));
+    const vs = cierresDe('balance');
+    return { ms, anteriores: {}, no: vs.length ? vs[vs.length - 1].no + 1 : 1, desde: '', hasta: EX.hasta };
+  }
+  const sub = EX.mode === 'corte' ? EX.sub : '';
+  const prev = cierresDe(EX.mode, sub); const ult = prev[prev.length - 1];
+  const { nuevas, ajustes, snap } = pendientesCierre(EX.mode, sub, EX.hasta);
+  const etiqueta = (EX.mode === 'acta' ? 'ACTA ' : 'CORTE ') + (ult ? ult.no : '');
+  return { ms: filasCierre(nuevas, ajustes, etiqueta), nuevas, ajustes, anteriores: EX.mode === 'acta' ? sumaSnap(snap) : {}, no: ult ? ult.no + 1 : 1, desde: ult ? diaSiguiente(ult.hasta) : '', hasta: EX.hasta, prev };
 }
 function renderExport(main) {
   const subs = S.cfg.subs;
   if (EX.mode === 'corte' && !subs.find((s) => s.id === EX.sub) && subs[0]) EX.sub = subs[0].id;
-  const ms = medidasExport();
-  const itemsCon = [...new Set(ms.map((m) => m.item))];
   const sub = subs.find((s) => s.id === EX.sub);
+  const D = docActual(); const ms = D.ms;
+  const itemsCon = [...new Set(ms.map((m) => m.item))];
+  const nomDoc = EX.mode === 'balance' ? 'Balance' : EX.mode === 'acta' ? 'Acta' : 'Corte';
   let precios = '';
   if (EX.mode === 'corte' && sub && itemsCon.length) {
-    precios = `<div class="card"><div style="font-weight:700;margin-bottom:6px">Precios pactados con ${esc(sub.nombre)}</div><div class="hint">Se guardan para los próximos cortes.</div><div class="scroll"><table class="table"><thead><tr><th>Ítem</th><th>Cant.</th><th>Valor unitario</th></tr></thead><tbody>${itemsCon.map((cod) => { const it = itemBy(cod) || {}; const q = ms.filter((m) => m.item === cod).reduce((s, m) => s + calcMedida(tipoDe(cod), m), 0); return `<tr><td><b class="num">${esc(cod)}</b><div class="hint">${esc((it.desc || '').slice(0, 60))}…</div></td><td class="num">${fmt(q)} ${esc(it.und || '')}</td><td><input inputmode="decimal" data-cod="${esc(cod)}" value="${esc((sub.precios || {})[cod] ?? '')}" placeholder="0"></td></tr>`; }).join('')}</tbody></table></div></div>`;
+    precios = `<div class="card"><div style="font-weight:700;margin-bottom:6px">Precios pactados con ${esc(sub.nombre)}</div><div class="hint">Se guardan para los próximos cortes.</div><div class="scroll"><table class="table"><thead><tr><th>Ítem</th><th>Cant.</th><th>Valor unitario</th></tr></thead><tbody>${itemsCon.map((cod) => { const it = itemBy(cod) || {}; const q = ms.filter((m) => m.item === cod).reduce((t, m) => t + calcMedida(tipoDe(cod), m), 0); return `<tr><td><b class="num">${esc(cod)}</b><div class="hint">${esc((it.desc || '').slice(0, 60))}…</div></td><td class="num">${fmt(q)} ${esc(it.und || '')}</td><td><input inputmode="decimal" data-cod="${esc(cod)}" value="${esc((sub.precios || {})[cod] ?? '')}" placeholder="0"></td></tr>`; }).join('')}</tbody></table></div></div>`;
   }
   const faltan = EX.fotos ? ms.flatMap((m) => m.fotos || []).length : 0;
+  const sinBal = EX.mode === 'balance' && !ms.length && vivas().some((m) => destDe(m) === 'obra');
+  const exc = EX.mode === 'acta' ? [...excedidos()] : [];
+  const gen = EX.generado && EX.generado.mode === EX.mode && (EX.mode !== 'corte' || EX.generado.sub === EX.sub) ? EX.generado : null;
+  const cerrados = EX.mode === 'balance' ? [] : (D.prev || []).slice().reverse();
   main.innerHTML = `<div class="content" style="padding:0">
     <div class="seg" role="group" aria-label="Tipo de documento">
       ${[['balance', 'Balance'], ['acta', 'Acta parcial'], ['corte', 'Corte sub.']].map(([k, t]) => `<button type="button" data-m="${k}" aria-pressed="${EX.mode === k}">${t}</button>`).join('')}
     </div>
-    <div class="hint">${EX.mode === 'balance' ? 'Anexo No. 1 con cantidades replanteadas, mayores y menores cantidades y AIU, más una memoria por ítem con todo lo medido hasta la fecha.' : EX.mode === 'acta' ? 'Acta con cantidades anteriores, de este periodo y acumuladas. Las memorias incluyen solo lo medido en el periodo.' : 'Corte para un subcontratista: solo sus medidas del periodo, con los precios pactados con él.'}</div>
+    <div class="hint">${EX.mode === 'balance' ? 'Anexo No. 1 con las medidas marcadas como <b>Balance</b>: cantidades replanteadas, mayores y menores cantidades y AIU, más una memoria por ítem.' : EX.mode === 'acta' ? 'Acta con las medidas de <b>Obra ejecutada</b> que aún no se han cobrado. Las cantidades anteriores salen de las actas ya cerradas.' : 'Corte para un subcontratista con sus medidas de <b>Obra ejecutada</b> que aún no se le han pagado, con los precios pactados con él.'}</div>
     <div class="card" style="display:flex;flex-direction:column;gap:12px">
       ${EX.mode === 'corte' ? (subs.length ? `<label class="f">Subcontratista<select id="exSub">${subs.map((s) => `<option value="${esc(s.id)}" ${s.id === EX.sub ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>` : `<div class="note">Primero agrega tus subcontratistas en <b>Ajustes</b>.</div>`) : ''}
-      ${EX.mode !== 'balance' ? `<div class="grid3"><label class="f">No.<input class="n" id="exNo" inputmode="numeric" value="${esc(EX.actaNo)}"></label><label class="f">Desde<input type="date" id="exDesde" value="${esc(EX.desde)}"></label><label class="f">Hasta<input type="date" id="exHasta" value="${esc(EX.hasta)}"></label></div>` : `<label class="f">Medidas hasta<input type="date" id="exHasta" value="${esc(EX.hasta)}"></label>`}
+      ${EX.mode === 'balance'
+        ? `<div class="grid2"><div class="f"><span>Versión</span><b class="num" style="font-size:20px">v${D.no}</b></div><label class="f">Medidas hasta<input type="date" id="exHasta" value="${esc(EX.hasta)}"></label></div>`
+        : `<div class="grid3"><div class="f"><span>${nomDoc} No.</span><b class="num" style="font-size:20px">${D.no}</b></div><div class="f"><span>Desde</span><b class="num">${esc(D.desde || 'el inicio')}</b></div><label class="f">Hasta<input type="date" id="exHasta" value="${esc(EX.hasta)}"></label></div>`}
       <label class="toggle"><input type="checkbox" id="exFotos" ${EX.fotos ? 'checked' : ''} style="accent-color:var(--accent)"> Incluir fotos en las memorias</label>
-      <div class="hint"><b class="num">${ms.length}</b> medidas en <b class="num">${itemsCon.length}</b> ítems entran en este documento${faltan ? ` · ${faltan} fotos (las de otros celulares se descargan, necesita señal)` : ''}.</div>
+      <div class="hint"><b class="num">${EX.mode === 'balance' ? ms.length : D.nuevas.length}</b> medidas en <b class="num">${itemsCon.length}</b> ítems${EX.mode !== 'balance' && D.ajustes.length ? ` · <b class="num">${D.ajustes.length}</b> correcciones de medidas ya cobradas` : ''}${faltan ? ` · ${faltan} fotos (las de otros celulares se descargan, necesita señal)` : ''}.</div>
+      ${sinBal ? '<div class="note">No hay medidas marcadas como <b>Balance</b>. Al registrar una medida, escoge “Balance” si es del replanteo del proyecto.</div>' : ''}
+      ${exc.length ? `<div class="note">${exc.length} ítem${exc.length > 1 ? 's' : ''} con lo ejecutado por encima del balance: <b class="num">${exc.slice(0, 8).map(esc).join(', ')}${exc.length > 8 ? '…' : ''}</b>. Salen en naranja en el acta.</div>` : ''}
     </div>
     ${precios}
-    <button class="btn pri" type="button" id="exGo" ${EX.busy || !ms.length || (EX.mode === 'corte' && !sub) ? 'disabled' : ''}>${EX.busy ? 'Generando…' : 'Generar Excel'}</button>
+    <button class="btn pri" type="button" id="exGo" ${EX.busy || !ms.length || (EX.mode === 'corte' && !sub) ? 'disabled' : ''}>${EX.busy ? 'Generando…' : `Generar ${nomDoc}${EX.mode === 'balance' ? '' : ' No. ' + D.no}`}</button>
     ${EX.archivo ? `<div class="card" style="display:flex;flex-direction:column;gap:10px"><b>${esc(EX.archivo.file.name)}</b><div class="actions"><a class="btn pri" href="${EX.archivo.url}" download="${esc(EX.archivo.file.name)}" style="text-align:center;text-decoration:none">Descargar</a>${navigator.canShare && navigator.canShare({ files: [EX.archivo.file] }) ? '<button class="btn" type="button" id="exShare">Compartir</button>' : ''}</div></div>` : ''}
     ${EX.msg ? `<div class="note ${EX.msgKind || ''}">${esc(EX.msg)}</div>` : ''}
+    ${gen && !gen.cerrado ? (EX.mode === 'balance'
+      ? `<div class="card" style="display:flex;flex-direction:column;gap:8px"><b>¿Este balance es una versión que vas a presentar?</b><div class="hint">Guárdalo como versión v${D.no} para poder compararlo después con los balances ajustados. Las medidas de balance se pueden seguir editando.</div><button class="btn" type="button" id="exCerrar">Guardar como versión v${D.no}</button></div>`
+      : `<div class="card" style="display:flex;flex-direction:column;gap:8px"><b>¿Ya presentaste ${EX.mode === 'acta' ? 'esta acta' : 'este corte'}?</b><div class="hint">Al cerrar ${EX.mode === 'acta' ? 'el Acta' : 'el Corte'} No. ${D.no}, sus medidas quedan bloqueadas: nadie las puede cambiar ni borrar, y solo el director puede corregirlas con registro. Lo que se mida después va a la siguiente.</div><button class="btn" type="button" id="exCerrar">Cerrar ${EX.mode === 'acta' ? 'Acta' : 'Corte'} No. ${D.no}</button></div>`) : ''}
+    ${EX.mode === 'balance' && cierresDe('balance').length ? `<div class="card"><div style="font-weight:700;margin-bottom:6px">Versiones del balance</div><div class="hint" style="margin-bottom:8px">Cantidades de cada versión guardada y del balance actual. “Cambio” es la diferencia contra la última versión.</div>${tablaVersiones()}</div>` : ''}
+    ${cerrados.length ? `<div class="card"><div style="font-weight:700;margin-bottom:6px">${EX.mode === 'acta' ? 'Actas cerradas' : 'Cortes cerrados de ' + esc(sub ? sub.nombre : '')}</div>${cerrados.map((c) => `<div class="grp"><span><b>No. ${c.no}</b> · ${esc(c.desde || 'inicio')} a ${esc(c.hasta)}<div class="hint">Cerrado el ${esc(c.fecha)}${c.autor ? ' por ' + esc(c.autor) : ''} · ${Object.keys(c.snap || {}).length} medidas</div></span><button class="btn" type="button" data-redl="${esc(c.id)}">Descargar</button></div>`).join('')}</div>` : ''}
   </div>`;
   main.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => { EX.mode = b.dataset.m; EX.msg = ''; EX.archivo = null; render(); }));
-  const bind = (id, k) => { const e = $('#' + id, main); if (e) e.addEventListener('change', () => { EX[k] = e.type === 'checkbox' ? e.checked : e.value; EX.archivo = null; render(); }); };
-  bind('exSub', 'sub'); bind('exNo', 'actaNo'); bind('exDesde', 'desde'); bind('exHasta', 'hasta'); bind('exFotos', 'fotos');
+  const bind = (id, k) => { const e = $('#' + id, main); if (e) e.addEventListener('change', () => { EX[k] = e.type === 'checkbox' ? e.checked : e.value; EX.archivo = null; EX.generado = null; EX.msg = ''; render(); }); };
+  bind('exSub', 'sub'); bind('exHasta', 'hasta'); bind('exFotos', 'fotos');
   main.querySelectorAll('input[data-cod]').forEach((inp) => inp.addEventListener('change', () => {
-    guardarConfig('subs', S.cfg.subs.map((s) => s.id === EX.sub ? Object.assign({}, s, { precios: Object.assign({}, s.precios, { [inp.dataset.cod]: num(inp.value) }) }) : s));
+    guardarConfig('subs', S.cfg.subs.map((x) => x.id === EX.sub ? Object.assign({}, x, { precios: Object.assign({}, x.precios, { [inp.dataset.cod]: num(inp.value) }) }) : x));
   }));
-  $('#exGo', main).addEventListener('click', exportar);
+  $('#exGo', main).addEventListener('click', () => exportar(D));
+  const ce = $('#exCerrar', main);
+  if (ce) ce.addEventListener('click', async () => {
+    if (!(await pedirDirector(EX.mode === 'balance' ? 'Para guardar una versión del balance.' : `Para cerrar ${EX.mode === 'acta' ? 'el Acta' : 'el Corte'} No. ${D.no}.`))) return;
+    const c = EX.mode === 'balance' ? await guardarVersionBalance(EX.hasta) : await cerrarCierre(EX.mode, EX.mode === 'corte' ? EX.sub : '', EX.hasta);
+    EX.generado.cerrado = true; EX.msg = `${nombreCierre(c)} ${EX.mode === 'balance' ? 'guardado' : 'cerrado'}.`; EX.msgKind = 'ok'; render();
+  });
+  main.querySelectorAll('[data-redl]').forEach((b) => b.addEventListener('click', () => {
+    const c = cierres().find((x) => x.id === b.dataset.redl); if (!c) return;
+    const dd = datosDeCierre(c);
+    exportar({ ms: dd.medidas, anteriores: dd.anteriores, no: c.no, desde: c.desde, hasta: c.hasta, reimpresion: true });
+  }));
   const sh = $('#exShare', main);
   if (sh) sh.addEventListener('click', async () => { try { await navigator.share({ files: [EX.archivo.file], title: EX.archivo.file.name }); } catch (e) {} });
 }
-async function exportar() {
+async function exportar(D) {
   EX.busy = true; EX.msg = ''; EX.archivo = null; render();
   try {
     await cargarExcel();
-    const ms = medidasExport();
+    const ms = D.ms;
     const fotos = {}; let sinFoto = 0;
     if (EX.fotos) {
-      const ids = ms.flatMap((m) => m.fotos || []);
+      const ids = [...new Set(ms.flatMap((m) => m.fotos || []))];
       let i = 0;
       const worker = async () => { while (i < ids.length) { const f = ids[i++]; const dd = await fotoCompleta(f); if (dd) fotos[f] = dd; else sinFoto++; } };
       await Promise.all([worker(), worker(), worker()]);
     }
-    const anteriores = {};
-    if (EX.mode === 'acta' && EX.desde) for (const m of vivas()) if ((m.fecha || '') < EX.desde) anteriores[m.item] = (anteriores[m.item] || 0) + calcMedida(tipoDe(m.item), m);
     const sub = S.cfg.subs.find((s) => s.id === EX.sub);
-    const wb = buildWorkbook(ExcelJS, { mode: EX.mode, proyecto: P(), rows: allRows(), medidas: ms, fotos, tipos: Object.fromEntries(items().map((x) => [x.cod, tipoDe(x.cod)])), actaNo: EX.actaNo, desde: EX.desde, hasta: EX.hasta, anteriores, subNombre: sub ? sub.nombre : '', subPrecios: sub ? sub.precios : {} });
+    const wb = buildWorkbook(ExcelJS, { mode: EX.mode, proyecto: P(), rows: allRows(), medidas: ms, fotos, tipos: Object.fromEntries(items().map((x) => [x.cod, tipoDe(x.cod)])), actaNo: EX.mode === 'balance' ? '' : D.no, desde: D.desde, hasta: D.hasta, anteriores: D.anteriores || {}, excedidos: EX.mode === 'acta' ? [...excedidos()] : [], subNombre: sub ? sub.nombre : '', subPrecios: sub ? sub.precios : {} });
     const buf = await wb.xlsx.writeBuffer();
-    const nombre = (EX.mode === 'balance' ? 'BALANCE' : EX.mode === 'acta' ? 'ACTA_' + EX.actaNo : 'CORTE_' + EX.actaNo + '_' + (sub ? sub.nombre : '')).replace(/[^\wÑñ-]+/g, '_') + '_' + (EX.hasta || hoy()) + '.xlsx';
+    const nombre = (EX.mode === 'balance' ? 'BALANCE_v' + D.no : EX.mode === 'acta' ? 'ACTA_' + D.no : 'CORTE_' + D.no + '_' + (sub ? sub.nombre : '')).replace(/[^\wÑñ-]+/g, '_') + '_' + (D.hasta || hoy()) + '.xlsx';
     EX.archivo = await entregarArchivo(new Blob([buf]), nombre);
-    EX.msg = sinFoto ? `Listo. ${sinFoto} fotos no se pudieron traer (sin señal); genera de nuevo con señal para incluirlas.` : 'Listo. Descárgalo o compártelo por WhatsApp o correo.';
+    EX.generado = D.reimpresion ? null : { mode: EX.mode, sub: EX.sub, no: D.no, cerrado: false };
+    EX.msg = sinFoto ? `Listo. ${sinFoto} fotos no se pudieron traer (sin señal); genera de nuevo con señal para incluirlas.` : D.reimpresion ? 'Listo: es el mismo documento que se cerró.' : 'Listo. Descárgalo o compártelo por WhatsApp o correo.';
     EX.msgKind = sinFoto ? '' : 'ok';
   } catch (e) { EX.msg = 'Error al generar el Excel: ' + (e && e.message || e); EX.msgKind = 'bad'; }
   EX.busy = false; render();
@@ -633,6 +698,11 @@ function renderAjustes(main) {
       <label class="f">Clave<input id="c_clave" value="${esc(S.conn.clave)}" autocomplete="off"></label>
       <div class="actions"><button class="btn pri" type="button" id="c_save">Guardar conexión</button><button class="btn" type="button" id="c_sync" ${S.conn.url ? '' : 'disabled'}>Sincronizar ahora</button></div>
       ${S.conn.url ? `<div class="hint">Enlace para tu personal: lo abren una vez y la app queda conectada.</div><div class="inline"><input id="c_link" readonly value="${esc(enlaceInvitacion())}"><button class="btn" type="button" id="c_copy">Copiar</button></div>` : ''}
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-weight:700">Director</div>
+      <div class="hint">${hayPin() ? (S.esDirector ? 'Modo director <b>activo</b> en este celular hasta que cierres la app.' : 'Con el PIN del director se cierran actas y cortes, se guardan versiones del balance y se corrigen medidas ya cobradas.') : 'Aún no hay PIN del director. Créalo para poder cerrar actas y cortes.'}</div>
+      <div class="actions">${S.esDirector ? '<button class="btn" type="button" id="dirSalir">Salir del modo director</button><button class="btn" type="button" id="dirPin">Cambiar PIN</button>' : `<button class="btn" type="button" id="dirEntrar">${hayPin() ? 'Entrar como director' : 'Crear PIN del director'}</button>`}</div>
     </div>
     <div class="card" style="display:flex;flex-direction:column;gap:10px">
       <div style="font-weight:700">Presupuesto del contrato</div>
@@ -731,6 +801,9 @@ function renderAjustes(main) {
     } catch (err) { toast(err.message || 'No se pudo leer el archivo.'); }
   });
   main.querySelectorAll('[data-del-plan]').forEach((b) => b.addEventListener('click', () => guardarConfig('planos', { lista: edificaciones().filter((x) => x.id !== b.dataset.delPlan) })));
+  const de = $('#dirEntrar', main); if (de) de.addEventListener('click', async () => { if (await pedirDirector('Modo director para este celular.')) render(); });
+  const ds = $('#dirSalir', main); if (ds) ds.addEventListener('click', () => { S.esDirector = false; render(); });
+  const dp = $('#dirPin', main); if (dp) dp.addEventListener('click', async () => { S.esDirector = false; const viejo = S.cfg.director; S.cfg.director = null; const ok = await pedirDirector('Escribe el nuevo PIN del director.'); if (!ok) { S.cfg.director = viejo; S.esDirector = true; } render(); });
   $('#p_save', main).addEventListener('click', () => {
     guardarConfig('proyecto', { contrato: v('p_contrato'), objeto: v('p_objeto'), contratista: v('p_contratista'), supervisor: v('p_supervisor'), elaboro: v('p_elaboro'), reviso: v('p_reviso'), admin: num(v('p_admin')) / 100, imprev: num(v('p_imprev')) / 100, util: num(v('p_util')) / 100, iva: num(v('p_iva')) / 100 });
     toast('Datos guardados');
