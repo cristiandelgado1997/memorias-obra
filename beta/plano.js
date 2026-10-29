@@ -220,7 +220,7 @@ function renderPlano(main) {
   const se = $('#plEdif', main); if (se) se.addEventListener('change', () => { PL.edif = se.value; PL.sel = null; render(); });
   $('#plWrap', main).addEventListener('click', (e) => { const r = e.target.closest('[data-esp]'); if (r) { PL.sel = r.dataset.esp; render(); } });
   const ab = $('#abrirEsp', main); if (ab) ab.addEventListener('click', () => abrirEspacio(sel.id));
-  $('#plPdf', main).addEventListener('click', async () => { try { await exportarPlanosPDF(PL.edif); } catch (e) { toast('No se pudo generar el PDF: ' + (e.message || e)); } });
+  $('#plPdf', main).addEventListener('click', async () => { try { await exportarPlanosCAD(PL.edif); } catch (e) { toast('No se pudo generar el PDF: ' + (e.message || e)); } });
   $('#pl3d', main).addEventListener('click', () => abrir3D(PL.edif));
 }
 function fichaEspacio(s, o) {

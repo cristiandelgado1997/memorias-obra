@@ -1,7 +1,7 @@
 /* Service worker: guarda la app en el celular para que abra sin señal */
-const CACHE = 'mobeta-v0.2.1';
+const CACHE = 'mobeta-v0.3.0';
 const NUCLEO = [
-  './', 'index.html', 'app.js', 'plano.js', 'vistas.js', 'xl.js', 'importar.js', 'manifest.webmanifest',
+  './', 'index.html', 'app.js', 'plano.js', 'vistas.js', 'planos-cad.js', 'xl.js', 'importar.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/maskable-512.png',
   'fonts/ibm-plex-sans-condensed-latin-400-normal.woff2', 'fonts/ibm-plex-sans-condensed-latin-500-normal.woff2',
   'fonts/ibm-plex-sans-condensed-latin-600-normal.woff2', 'fonts/ibm-plex-sans-condensed-latin-700-normal.woff2',

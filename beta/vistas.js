@@ -142,10 +142,12 @@ function cajas3D(edif) {
     const o = M[s.id]; const r = resumenEspacio(s, o);
     const x0 = s.x0, y0 = s.y0, w = r.W, h = r.H;
     const estado = o ? (o.revisar.length ? 'revisar' : 'medido') : 'vacio';
-    out.push({ grupo: s.nombre, tipo: 'piso', estado, c: [x0 + w / 2, -0.03, y0 + h / 2], d: [w, 0.06, h], rot: 0 });
+    out.push({ grupo: s.nombre, tipo: 'piso', estado, esp: s.id, nombre: s.nombre, c: [x0 + w / 2, -0.03, y0 + h / 2], d: [w, 0.06, h], rot: 0 });
+    const Hc = (o && o.alto) || 2.4;
+    out.push({ grupo: s.nombre, tipo: 'cielo', esp: s.id, oculto: true, c: [x0 + w / 2, Hc + 0.01, y0 + h / 2], d: [w, 0.02, h], rot: 0 });
     for (const el of elementosDe(s.id)) {
       const [a, b, c, d2] = rectElemento(el, w, h); const al = num(el.alto) || 0.9;
-      out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', c: [x0 + (a + c) / 2, al / 2, y0 + (b + d2) / 2], d: [c - a, al, d2 - b], rot: 0 });
+      out.push({ grupo: s.nombre + ' ' + el.nombre, tipo: 'elemento', esp: s.id, c: [x0 + (a + c) / 2, al / 2, y0 + (b + d2) / 2], d: [c - a, al, d2 - b], rot: 0 });
     }
     // inicio y dirección de cada muro (posición medida desde la izquierda, mirando desde dentro)
     const def = { 1: [x0 + w, y0, -1, 0, 0, 1], 2: [x0 + w, y0 + h, 0, -1, -1, 0], 3: [x0, y0 + h, 1, 0, 0, -1], 4: [x0, y0, 0, 1, 1, 0] };
@@ -156,7 +158,8 @@ function cajas3D(edif) {
       const vanos = ((o && o.muros[k].vanos) || []).map((v, i) => {
         const pos = v.pos != null ? v.pos : (L - v.ancho) / 2 + i * 0.15;
         const sill = antepecho(v).z;
-        return { u0: Math.max(0, pos), u1: Math.min(L, pos + v.ancho), z0: sill, z1: Math.min(H, sill + v.alto) };
+        const puerta = sill === 0 && (v.tipo === 'puerta' || (!v.tipo && v.alto >= 1.8));
+        return { u0: Math.max(0, pos), u1: Math.min(L, pos + v.ancho), z0: sill, z1: Math.min(H, sill + v.alto), puerta };
       }).sort((a, b) => a.u0 - b.u0);
       const piezas = []; let u = 0;
       for (const v of vanos) {
@@ -167,10 +170,18 @@ function cajas3D(edif) {
       }
       if (u < L) piezas.push([u, L, 0, H]);
       const rot = Math.atan2(dy, dx);
-      for (const [a, b, z0, z1] of piezas) {
-        if (b - a < 0.01 || z1 - z0 < 0.01) continue;
+      const caja = (a, b, z0, z1, grosor, tipo, extra = {}) => {
+        if (b - a < 0.005 || z1 - z0 < 0.005) return;
         const um = (a + b) / 2;
-        out.push({ grupo: s.nombre, tipo: 'muro', supuesto: !Hm, c: [sx + dx * um + nx * ESPESOR / 2, (z0 + z1) / 2, sy + dy * um + ny * ESPESOR / 2], d: [b - a, z1 - z0, ESPESOR], rot });
+        out.push(Object.assign({ grupo: s.nombre, tipo, esp: s.id, k, c: [sx + dx * um + nx * ESPESOR / 2, (z0 + z1) / 2, sy + dy * um + ny * ESPESOR / 2], d: [b - a, z1 - z0, grosor], rot }, extra));
+      };
+      for (const [a, b, z0, z1] of piezas) caja(a, b, z0, z1, ESPESOR, 'muro', { supuesto: !Hm });
+      // carpintería: marcos, hojas de puerta y vidrios
+      const fm = 0.05, g = ESPESOR + 0.02;
+      for (const v of vanos) {
+        caja(v.u0, v.u0 + fm, v.z0, v.z1, g, 'marco'); caja(v.u1 - fm, v.u1, v.z0, v.z1, g, 'marco'); caja(v.u0, v.u1, v.z1 - fm, v.z1, g, 'marco');
+        if (v.puerta) caja(v.u0 + fm, v.u1 - fm, 0, v.z1 - fm, 0.04, 'hoja');
+        else { caja(v.u0, v.u1, v.z0, v.z0 + fm, g, 'marco'); caja((v.u0 + v.u1) / 2 - 0.02, (v.u0 + v.u1) / 2 + 0.02, v.z0, v.z1, 0.05, 'marco'); caja(v.u0 + fm, v.u1 - fm, v.z0 + fm, v.z1 - fm, 0.012, 'vidrio'); }
       }
     }
   }
@@ -187,7 +198,7 @@ function esquinas(b) {
 }
 const CARAS = [[0, 1, 2, 3], [4, 7, 6, 5], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]];
 function exportarOBJ(edif) {
-  const bs = cajas3D(edif); let v = 1; const L = ['# Memorias de Obra · ' + edif.nombre, '# Unidades: metros. Eje Y hacia arriba.'];
+  const bs = cajas3D(edif).filter((b) => !b.oculto); let v = 1; const L = ['# Memorias de Obra · ' + edif.nombre, '# Unidades: metros. Eje Y hacia arriba.'];
   let g = '';
   for (const b of bs) {
     const nombreG = (b.grupo + '_' + b.tipo).replace(/[^\wÑñ]+/g, '_');
@@ -199,9 +210,9 @@ function exportarOBJ(edif) {
   return new Blob([L.join('\n')], { type: 'text/plain' });
 }
 function exportarDXF(edif) {
-  const bs = cajas3D(edif); const L = ['0', 'SECTION', '2', 'ENTITIES'];
+  const bs = cajas3D(edif).filter((b) => !b.oculto); const L = ['0', 'SECTION', '2', 'ENTITIES'];
   for (const b of bs) {
-    const P8 = esquinas(b); const capa = b.tipo === 'piso' ? 'PISOS' : b.tipo === 'elemento' ? 'ELEMENTOS' : 'MUROS';
+    const P8 = esquinas(b); const capa = { piso: 'PISOS', elemento: 'ELEMENTOS', marco: 'CARPINTERIA', hoja: 'CARPINTERIA', vidrio: 'VIDRIOS' }[b.tipo] || 'MUROS';
     for (const f of CARAS) {
       L.push('0', '3DFACE', '8', capa);
       f.forEach((i, j) => { const [x, y, z] = P8[i]; L.push(String(10 + j), x.toFixed(3), String(20 + j), z.toFixed(3), String(30 + j), y.toFixed(3)); });
@@ -211,49 +222,146 @@ function exportarDXF(edif) {
   return new Blob([L.join('\r\n')], { type: 'application/dxf' });
 }
 
+/* ---------- Texturas dibujadas en la app (funcionan sin señal) ---------- */
+function texturaCanvas(tipo) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const ruido = (n, a, b, col) => { for (let i = 0; i < n; i++) { g.fillStyle = col(); g.fillRect(Math.random() * 256, Math.random() * 256, a + Math.random() * b, a + Math.random() * b); } };
+  if (tipo === 'ceramica') {
+    g.fillStyle = '#eef0f1'; g.fillRect(0, 0, 256, 256); ruido(500, 1, 2, () => `rgba(120,130,140,${Math.random() * 0.06})`);
+    g.strokeStyle = '#b9c0c6'; g.lineWidth = 3; for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, 256); g.stroke(); g.beginPath(); g.moveTo(0, i * 64); g.lineTo(256, i * 64); g.stroke(); }
+  } else if (tipo === 'granito') {
+    g.fillStyle = '#d8d0c3'; g.fillRect(0, 0, 256, 256);
+    ruido(2500, 1, 2, () => ['rgba(90,80,70,.5)', 'rgba(255,255,255,.6)', 'rgba(150,135,120,.5)', 'rgba(40,40,40,.35)'][Math.floor(Math.random() * 4)]);
+    g.strokeStyle = 'rgba(120,110,100,.45)'; g.lineWidth = 2; for (let i = 0; i <= 2; i++) { g.beginPath(); g.moveTo(i * 128, 0); g.lineTo(i * 128, 256); g.stroke(); g.beginPath(); g.moveTo(0, i * 128); g.lineTo(256, i * 128); g.stroke(); }
+  } else if (tipo === 'concreto') {
+    g.fillStyle = '#b8b6b1'; g.fillRect(0, 0, 256, 256); ruido(3000, 1, 3, () => `rgba(${Math.random() < 0.5 ? '80,80,80' : '230,230,230'},${Math.random() * 0.25})`);
+  } else if (tipo === 'madera') {
+    g.fillStyle = '#9a6a3c'; g.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 3) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '60,35,15' : '190,140,90'},${0.08 + Math.random() * 0.12})`; g.fillRect(0, y, 256, 1 + Math.random() * 2); }
+  } else if (tipo === 'pintura') {
+    g.fillStyle = '#f3f0ea'; g.fillRect(0, 0, 256, 256); ruido(1800, 1, 1, () => `rgba(150,140,130,${Math.random() * 0.06})`);
+  } else if (tipo === 'terreno') {
+    g.fillStyle = '#a9b28f'; g.fillRect(0, 0, 256, 256); ruido(4000, 1, 3, () => `rgba(${Math.random() < 0.5 ? '90,110,70' : '170,160,120'},${Math.random() * 0.35})`);
+  }
+  return c;
+}
+const tipoPiso = (nombre) => /PLACA|ANDÉN|ANDEN|EXTERIOR|PATIO/i.test(nombre) ? 'concreto' : /BAÑO|DUCHA|INODORO|LAVAMANO|SANITARIO|COCINA/i.test(nombre) ? 'ceramica' : 'granito';
+
 async function abrir3D(edifId) {
   const edif = edifBy(edifId); if (!edif) return;
-  const host = document.createElement('div'); host.className = 'sheet'; host.style.zIndex = 65; host.style.paddingBottom = '0';
+  const host = document.createElement('div'); host.className = 'sheet'; host.style.zIndex = 65; host.style.paddingBottom = '0'; host.style.overflow = 'hidden';
   document.body.appendChild(host);
+  // ítems con medidas ligadas a espacios de esta edificación
+  const meds = vivas().filter((m) => m.esp && espBy(m.esp) && espBy(m.esp).edif.id === edif.id);
+  const itemsCon = [...new Set(meds.map((m) => m.item))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
   host.innerHTML = `<div class="bar gut dark"><button class="iconbtn" type="button" id="v3Back" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg></button><h2><span class="eyebrow" style="display:block">Modelo 3D</span>${esc(edif.nombre)}</h2></div>
-    <div id="v3Box" style="position:relative;height:calc(100% - 190px);min-height:320px;background:#e9edf1;touch-action:none"><div class="hint" style="padding:20px">Cargando el modelo…</div></div>
-    <div class="content gut" style="padding-block:10px">
-      <div class="leyenda"><span><i class="sw medido"></i>Medido</span><span><i class="sw revisar"></i>No cuadra</span><span><i class="sw vacio"></i>Sin medir / alto supuesto 2,40</span></div>
+    <div class="gut" style="padding-block:8px;background:var(--head);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label class="f" style="flex:1;min-width:200px;color:var(--head-mut)"><span>Ver</span><select id="v3Modo"><option value="real">Acabados (vista real)</option><option value="estado">Estado de medición</option>${itemsCon.map((c) => `<option value="it:${esc(c)}">Avance del ítem ${esc(c)} · ${esc(((itemBy(c) || {}).desc || '').slice(0, 38))}</option>`).join('')}</select></label>
+      <label class="toggle" style="padding:8px 10px;background:var(--head-2);color:var(--head-ink);border-color:var(--head-2)"><input type="checkbox" id="v3Nom" checked> Nombres</label>
+    </div>
+    <div id="v3Box" style="position:relative;height:calc(100% - 300px);min-height:300px;background:#dfe7ef;touch-action:none"><div class="hint" style="padding:20px">Cargando el modelo…</div></div>
+    <div class="content gut" style="padding-block:10px;gap:10px">
+      <div id="v3Ley" class="leyenda"></div>
       <div class="actions"><button class="btn" type="button" id="v3Obj">Descargar .obj</button><button class="btn" type="button" id="v3Dxf">Descargar .dxf (AutoCAD)</button></div>
     </div>`;
   let vivo = true;
   $('#v3Back', host).addEventListener('click', () => { vivo = false; host.remove(); });
-  $('#v3Obj', host).addEventListener('click', () => ofrecerArchivo(exportarOBJ(edif), `MODELO_${edif.nombre.replace(/[^\wÑñ-]+/g, '_')}.obj`, 'Modelo 3D', 'Formato OBJ: lo abren SketchUp, Blender, Revit (con complemento) y la mayoría de programas 3D. Unidades en metros.'));
-  $('#v3Dxf', host).addEventListener('click', () => ofrecerArchivo(exportarDXF(edif), `MODELO_${edif.nombre.replace(/[^\wÑñ-]+/g, '_')}.dxf`, 'Modelo 3D', 'Formato DXF con caras 3D en las capas MUROS y PISOS: lo abren AutoCAD, ArchiCAD, Revit y SketchUp. Unidades en metros.'));
+  const nomArch = edif.nombre.replace(/[^\wÑñ-]+/g, '_');
+  $('#v3Obj', host).addEventListener('click', () => ofrecerArchivo(exportarOBJ(edif), `MODELO_${nomArch}.obj`, 'Modelo 3D', 'Formato OBJ: lo abren SketchUp, Blender, Revit (con complemento) y la mayoría de programas 3D. Unidades en metros.'));
+  $('#v3Dxf', host).addEventListener('click', () => ofrecerArchivo(exportarDXF(edif), `MODELO_${nomArch}.dxf`, 'Modelo 3D', 'DXF con caras 3D en capas MUROS, PISOS, CARPINTERIA, VIDRIOS y ELEMENTOS: lo abren AutoCAD, ArchiCAD, Revit y SketchUp. Unidades en metros.'));
   try { await cargarScript('three.min.js', 'THREE'); } catch (e) { $('#v3Box', host).innerHTML = `<div class="note bad" style="margin:16px">${esc(e.message)}</div>`; return; }
   const THREE = window.THREE; const box = $('#v3Box', host); box.innerHTML = '';
   const W = () => box.clientWidth, H = () => box.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(W(), H());
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
   box.appendChild(renderer.domElement);
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xe9edf1);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa7b4, 0.85));
-  const sol = new THREE.DirectionalLight(0xffffff, 0.55); sol.position.set(-20, 40, 25); scene.add(sol);
-  const mats = {
-    medido: new THREE.MeshLambertMaterial({ color: 0x9ec3f0 }), revisar: new THREE.MeshLambertMaterial({ color: 0xf6c38b }), vacio: new THREE.MeshLambertMaterial({ color: 0xd9dee4 }),
-    muro: new THREE.MeshLambertMaterial({ color: 0xf4f6f8 }), elemento: new THREE.MeshLambertMaterial({ color: 0xc89b6d }), supuesto: new THREE.MeshLambertMaterial({ color: 0xc7ccd2, transparent: true, opacity: 0.55 }),
-  };
+  const scene = new THREE.Scene();
+  // cielo degradado
+  { const c = document.createElement('canvas'); c.width = 2; c.height = 256; const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#9fc3e6'); gr.addColorStop(1, '#eef3f7'); g.fillStyle = gr; g.fillRect(0, 0, 2, 256); const tx = new THREE.CanvasTexture(c); tx.encoding = THREE.sRGBEncoding; scene.background = tx; }
+  scene.add(new THREE.HemisphereLight(0xe3edf7, 0x8a8f7a, 0.65));
   const bs = cajas3D(edif);
-  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, maxY = 0;
-  const bordes = new THREE.LineBasicMaterial({ color: 0x5b6774 });
-  for (const b of bs) {
-    const geo = new THREE.BoxGeometry(b.d[0], b.d[1], b.d[2]);
-    const mesh = new THREE.Mesh(geo, b.tipo === 'piso' ? mats[b.estado] : b.tipo === 'elemento' ? mats.elemento : (b.supuesto ? mats.supuesto : mats.muro));
-    mesh.position.set(b.c[0], b.c[1], -b.c[2]); mesh.rotation.y = b.rot;
-    scene.add(mesh);
-    if (b.tipo !== 'piso') { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), bordes); e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); scene.add(e); }
-    minX = Math.min(minX, b.c[0]); maxX = Math.max(maxX, b.c[0]); minZ = Math.min(minZ, -b.c[2]); maxZ = Math.max(maxZ, -b.c[2]); maxY = Math.max(maxY, b.c[1] * 2);
-  }
+  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+  for (const b of bs) { minX = Math.min(minX, b.c[0] - b.d[0] / 2); maxX = Math.max(maxX, b.c[0] + b.d[0] / 2); minZ = Math.min(minZ, -b.c[2] - b.d[2] / 2); maxZ = Math.max(maxZ, -b.c[2] + b.d[2] / 2); }
   const centro = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
   const tam = Math.max(maxX - minX, maxZ - minZ, 4);
-  const cam = new THREE.PerspectiveCamera(45, W() / H(), 0.1, 2000);
-  const orb = { th: -0.9, ph: 0.95, r: tam * 1.25 };
+  const sol = new THREE.DirectionalLight(0xfff4e5, 1.05); sol.position.set(centro.x - tam * 0.6, tam * 1.2, centro.z + tam * 0.8); sol.target.position.copy(centro);
+  sol.castShadow = true; sol.shadow.mapSize.set(2048, 2048); const sc = sol.shadow.camera; sc.left = sc.bottom = -tam * 0.8; sc.right = sc.top = tam * 0.8; sc.near = 0.5; sc.far = tam * 4; sol.shadow.bias = -0.0005;
+  scene.add(sol); scene.add(sol.target);
+  const tex = (tipo, rx, ry) => { const t = new THREE.CanvasTexture(texturaCanvas(tipo)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; };
+  const std = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.85, metalness: 0 }, o));
+  // terreno
+  const suelo = new THREE.Mesh(new THREE.PlaneGeometry(tam * 4, tam * 4), std({ map: tex('terreno', tam / 3, tam / 3), roughness: 1 }));
+  suelo.rotation.x = -Math.PI / 2; suelo.position.set(centro.x, -0.065, centro.z); suelo.receiveShadow = true; scene.add(suelo);
+  const M = {
+    muro: std({ map: tex('pintura', 1, 1), color: 0xffffff }), supuesto: std({ color: 0xc7ccd2, transparent: true, opacity: 0.55 }),
+    marco: std({ color: 0x3b4148, metalness: 0.5, roughness: 0.4 }), hoja: std({ map: tex('madera', 1, 2) }),
+    vidrio: new THREE.MeshPhysicalMaterial({ color: 0xa9cfe8, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.1 }),
+    elemento: std({ map: tex('madera', 1, 1), color: 0xe7c9a4 }),
+    medido: std({ color: 0x8fb9ec }), revisar: std({ color: 0xf3b571 }), vacio: std({ color: 0xd3d8dd }),
+    hecho: std({ color: 0x2f7fe0 }), falta: std({ color: 0xe6e9ec, transparent: true, opacity: 0.75 }), cieloHecho: std({ color: 0x2f7fe0, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+  };
+  const mallas = []; const bordes = new THREE.LineBasicMaterial({ color: 0x6b7480, transparent: true, opacity: 0.6 });
+  for (const b of bs) {
+    const geo = new THREE.BoxGeometry(b.d[0], b.d[1], b.d[2]);
+    let mat;
+    if (b.tipo === 'piso') { const tp = tipoPiso(b.nombre || ''); const lado = tp === 'ceramica' ? 1.2 : tp === 'granito' ? 1.6 : 3; mat = std({ map: tex(tp, b.d[0] / lado, b.d[2] / lado), roughness: tp === 'ceramica' ? 0.35 : 0.6 }); b.matReal = mat; }
+    else mat = M[b.tipo] || M.muro;
+    if (b.tipo === 'muro' && b.supuesto) mat = M.supuesto;
+    const mesh = new THREE.Mesh(geo, mat); mesh.position.set(b.c[0], b.c[1], -b.c[2]); mesh.rotation.y = b.rot;
+    mesh.castShadow = b.tipo !== 'vidrio' && b.tipo !== 'cielo'; mesh.receiveShadow = true; mesh.visible = !b.oculto;
+    mesh.userData = b; b.matBase = mat; scene.add(mesh); mallas.push(mesh);
+    if (b.tipo === 'muro' || b.tipo === 'elemento') { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), bordes); mesh.add(e); }
+  }
+  // nombres de los espacios
+  const rotulos = [];
+  for (const b of bs.filter((x) => x.tipo === 'piso')) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = 'rgba(16,22,29,.82)'; const r = 20; g.beginPath(); g.moveTo(r, 0); g.arcTo(512, 0, 512, 128, r); g.arcTo(512, 128, 0, 128, r); g.arcTo(0, 128, 0, 0, r); g.arcTo(0, 0, 512, 0, r); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 44px Arial'; g.textAlign = 'center'; g.fillText(corto(b.nombre).slice(0, 20), 256, 58);
+    g.fillStyle = '#ffb020'; g.font = '34px Arial'; g.fillText(`${fmt(b.d[0] * b.d[2])} m²`, 256, 104);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false }));
+    const esc = Math.max(1.6, Math.min(4.5, Math.sqrt(b.d[0] * b.d[2]) / 2.2)); sp.scale.set(esc, esc / 4, 1);
+    sp.position.set(b.c[0], 3.1, -b.c[2]); sp.renderOrder = 10; scene.add(sp); rotulos.push(sp);
+  }
+  const cam = new THREE.PerspectiveCamera(42, W() / H(), 0.1, 3000);
+  const orb = { th: -0.9, ph: 0.85, r: tam * 0.8 };
   const ubicar = () => { cam.position.set(centro.x + orb.r * Math.sin(orb.ph) * Math.cos(orb.th), orb.r * Math.cos(orb.ph), centro.z + orb.r * Math.sin(orb.ph) * Math.sin(orb.th)); cam.lookAt(centro); renderer.render(scene, cam); };
-  ubicar();
+  // modos de vista
+  const leyenda = $('#v3Ley', host);
+  const aplicarModo = (modo) => {
+    let hechos = null, total = 0, und = '';
+    if (modo.startsWith('it:')) {
+      const cod = modo.slice(3); hechos = new Set(); und = (itemBy(cod) || {}).und || '';
+      for (const m of meds.filter((x) => x.item === cod)) {
+        total += calcMedida(tipoDe(cod), m);
+        const mm = /^m([1-4])$/.exec(m.parte || '');
+        if (mm && !m.desc) hechos.add(m.esp + '|' + mm[1]);
+        else if (m.parte === 'piso') hechos.add(m.esp + '|piso');
+        else if (m.parte === 'cielo') hechos.add(m.esp + '|cielo');
+        else if (!m.desc) hechos.add(m.esp + '|todo');
+      }
+    }
+    const Mo = modelo();
+    for (const mesh of mallas) {
+      const b = mesh.userData;
+      if (b.tipo === 'cielo') { mesh.visible = !!(hechos && hechos.has(b.esp + '|cielo')); mesh.material = M.cieloHecho; continue; }
+      if (modo === 'real') { mesh.material = b.matBase; continue; }
+      if (modo === 'estado') { if (b.tipo === 'piso') { const o = Mo[b.esp]; mesh.material = o ? (o.revisar.length ? M.revisar : M.medido) : M.vacio; } else mesh.material = b.matBase; continue; }
+      const todo = hechos.has(b.esp + '|todo');
+      if (b.tipo === 'muro') mesh.material = hechos.has(b.esp + '|' + b.k) || todo ? M.hecho : M.falta;
+      else if (b.tipo === 'piso') mesh.material = hechos.has(b.esp + '|piso') || todo ? M.hecho : M.vacio;
+      else mesh.material = b.matBase;
+    }
+    leyenda.innerHTML = modo === 'real' ? '<span>Pisos: cerámica en baños, granito en alojamientos, concreto en placas · muros sin alto medido en gris transparente (2,40 m supuesto)</span>'
+      : modo === 'estado' ? '<span><i class="sw medido"></i>Medido</span><span><i class="sw revisar"></i>No cuadra con el plano</span><span><i class="sw vacio"></i>Sin medir</span>'
+      : `<span><i class="sw" style="background:#2f7fe0;border-color:#2f7fe0"></i>Ya medido en este ítem</span><span><i class="sw vacio"></i>Falta</span><span><b class="num">${fmt(total)} ${esc(und)}</b> ligados al plano</span>`;
+    ubicar();
+  };
+  $('#v3Modo', host).addEventListener('change', (e) => aplicarModo(e.target.value));
+  $('#v3Nom', host).addEventListener('change', (e) => { rotulos.forEach((s) => (s.visible = e.target.checked)); ubicar(); });
+  aplicarModo('real');
   // girar con el dedo o el mouse; acercar con la rueda o pellizcando
   const toques = new Map(); let dist0 = 0;
   const el = renderer.domElement;
