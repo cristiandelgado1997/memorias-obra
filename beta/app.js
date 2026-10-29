@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.3.3';
+const VERSION = 'beta 0.3.4';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -812,12 +812,16 @@ if ('serviceWorker' in navigator) {
       b.querySelector('button').addEventListener('click', () => { w.postMessage('activar'); });
       document.body.appendChild(b);
     };
-    if (reg.waiting && navigator.serviceWorker.controller) avisar(reg.waiting);
+    // versión de prueba: se actualiza sola si no hay un formulario abierto; si lo hay, muestra el aviso
+    const nueva = (w) => { if (!document.querySelector('.sheet')) w.postMessage('activar'); else avisar(w); };
+    if (reg.waiting && navigator.serviceWorker.controller) nueva(reg.waiting);
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
-      w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) avisar(w); });
+      w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) nueva(w); });
     });
-    setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    setInterval(() => reg.update().catch(() => {}), 10 * 60 * 1000);
   }).catch(() => {});
   const habiaControlador = !!navigator.serviceWorker.controller;
   let recargado = false;
