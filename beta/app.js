@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.3.4';
+const VERSION = 'beta 0.3.5';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -723,6 +723,8 @@ function renderAjustes(main) {
     try {
       const j = JSON.parse(await f.text());
       if (j.tipo !== 'memorias-obra-plano' || !j.edificacion || !Array.isArray(j.edificacion.espacios)) throw new Error('Ese archivo no es un plano de la app.');
+      const previo = edificaciones().find((x) => x.id === j.edificacion.id);
+      if (previo) { const ids = new Set(j.edificacion.espacios.map((s) => s.id)); j.edificacion.espacios = j.edificacion.espacios.concat((previo.espacios || []).filter((s) => !ids.has(s.id))); } // conserva espacios creados a mano
       const lista = edificaciones().filter((x) => x.id !== j.edificacion.id).concat(j.edificacion);
       await guardarConfig('planos', { lista });
       toast(`Plano cargado: ${j.edificacion.nombre} (${j.edificacion.espacios.length} espacios)`);
