@@ -121,6 +121,14 @@ function notasCAD(pdf, x, y, w) {
 }
 
 /* ---------- Planta general (líneas del DWG + rótulos de espacios) ---------- */
+// centro del tramo libre más largo de un muro (para poner rótulos sin pisar puertas ni ventanas)
+function centroLibre(L, tramos) {
+  const t = tramos.map(([a, b]) => [Math.max(0, a), Math.min(L, b)]).sort((p, q) => p[0] - q[0]);
+  let u = 0, mejor = [0, 0];
+  for (const [a, b] of t) { if (a - u > mejor[1] - mejor[0]) mejor = [u, a]; u = Math.max(u, b); }
+  if (L - u > mejor[1] - mejor[0]) mejor = [u, L];
+  return (mejor[0] + mejor[1]) / 2;
+}
 function dibujarPlantaGeneral(D, edif, M, area, opt = {}) {
   const pdf = D.pdf; const [ax, ay, bx, by] = area;
   const esc = elegirEscala(edif.ancho + 3, edif.alto + 3, bx - ax - 20, by - ay - 26);
@@ -157,7 +165,29 @@ function dibujarPlantaGeneral(D, edif, M, area, opt = {}) {
   const xs = (L.muro || []).flatMap((s) => [s[0], s[2]]), ys = (L.muro || []).flatMap((s) => [s[1], s[3]]);
   const bx0 = xs.length ? Math.min(...xs) : Math.min(...edif.espacios.map((s) => s.x0)), bx1 = xs.length ? Math.max(...xs) : Math.max(...edif.espacios.map((s) => s.x1));
   const by0 = ys.length ? Math.min(...ys) : Math.min(...edif.espacios.map((s) => s.y0)), by1 = ys.length ? Math.max(...ys) : Math.max(...edif.espacios.map((s) => s.y1));
-  D.cota(bx0, by0, bx1, by0, 8, f2(bx1 - bx0)); D.cota(bx1, by0, bx1, by1, 8, f2(by1 - by0));
+  // cadenas exteriores: todas las caras de muro de los espacios, abajo y a la derecha (nivel 1), y total (nivel 2)
+  const cadena = (vals, fijo, horiz) => {
+    const v = [...new Set(vals.map((x) => +x.toFixed(2)))].sort((a, b) => a - b);
+    for (let i = 0; i < v.length - 1; i++) {
+      const L = v[i + 1] - v[i]; if (L < 0.005) continue; const txt = L * D.k >= 4.5 ? f2(L) : '';
+      if (horiz) D.cota(v[i], fijo, v[i + 1], fijo, 4.5, txt, { pt: 4.6 }); else D.cota(fijo, v[i], fijo, v[i + 1], 4.5, txt, { pt: 4.6 });
+    }
+  };
+  const interiores = edif.espacios.filter((s) => !/PLACA|AND[EÉ]N|PATIO|EXTERIOR/i.test(s.nombre || ''));
+  cadena([bx0, bx1, ...interiores.flatMap((s) => [s.x0, s.x1])], by0, true);
+  cadena([by0, by1, ...interiores.flatMap((s) => [s.y0, s.y1])], bx1, false);
+  D.cota(bx0, by0, bx1, by0, 10, f2(bx1 - bx0)); D.cota(bx1, by0, bx1, by1, 10, f2(by1 - by0));
+  // cotas interiores de cada espacio (medida de obra si ya se midió; naranja si no cuadra; * = sin medir); los vanos se acotan en la hoja de cada espacio
+  const naranja = [200, 100, 0];
+  for (const s of edif.espacios) {
+    const o = M[s.id]; const r = resumenEspacio(s, o); const P0 = dimsPlano(s);
+    const wmm = P0.w * D.k, hmm = P0.h * D.k; if (wmm < 16 || hmm < 16) continue; // en espacios pequeños no cabe: sus cotas van en su hoja
+    const tw = r.w != null ? f2(r.w) : f2(P0.w) + '*', th = r.h != null ? f2(r.h) : f2(P0.h) + '*';
+    const cw = r.w != null && Math.abs(r.w - P0.w) > TOL ? naranja : [90, 90, 90], ch = r.h != null && Math.abs(r.h - P0.h) > TOL ? naranja : [90, 90, 90];
+    const yI = s.y1 - Math.min(P0.h * 0.22, 6 / D.k + 0.3), xI = s.x0 + Math.min(P0.w * 0.1, 4 / D.k);
+    D.cota(s.x0, yI, s.x1, yI, 0, tw, { pt: 4.6, color: cw });
+    D.cota(xI, s.y0, xI, s.y1, 0, th, { pt: 4.6, color: ch });
+  }
   // título de la vista y escala gráfica
   const ty = by - 6;
   D.texto(opt.titulo || `PLANTA GENERAL · ${MAY(edif.nombre)}`, ax + (bx - ax) / 2, ty, { pt: 9, negrita: true });
@@ -220,12 +250,24 @@ function dibujarPlantaEspacio(D, s, o, area, edif) {
   // números de muro
   const etiqueta = (x, y, k) => { pdf.setLineWidth(0.15); pdf.circle(D.X(x), D.Y(y), 2.2, 'S'); D.texto('M' + k, D.X(x), D.Y(y) + 0.9, { pt: 5.5, negrita: true }); };
   const m = Math.min(w, h) * 0.12 + 0.1;
-  etiqueta(w / 2, m, 1); etiqueta(w - m, h / 2, 2); etiqueta(w / 2, h - m, 3); etiqueta(m, h / 2, 4);
+  const cl = (k) => centroLibre(k === 1 || k === 3 ? w : h, vanosMuro(k).map((v) => [v.u0 - 0.4, v.u1 + 0.4]));
+  etiqueta(w - cl(1), m, 1); etiqueta(w - m, h - cl(2), 2); etiqueta(cl(3), h - m, 3); etiqueta(m, cl(4), 4);
   // cotas interiores (naranja si no cuadra) y cadena de vanos en M1/M3
   const P0 = dimsPlano(s);
   const t1 = (o && largoObra(o, s, 1) != null) ? f2(w) : f2(w) + '*', t2 = (o && largoObra(o, s, 2) != null) ? f2(h) : f2(h) + '*';
   const dif1 = o && largoObra(o, s, 1) != null && Math.abs(w - P0.w) > TOL, dif2 = o && largoObra(o, s, 2) != null && Math.abs(h - P0.h) > TOL;
-  D.cota(0, -e, w, -e, 9, t1, { color: dif1 ? [200, 100, 0] : undefined }); D.cota(w + e, 0, w + e, h, 9, t2, { color: dif2 ? [200, 100, 0] : undefined });
+  D.cota(0, -e, w, -e, 13, t1, { color: dif1 ? [200, 100, 0] : undefined }); D.cota(w + e, 0, w + e, h, 13, t2, { color: dif2 ? [200, 100, 0] : undefined });
+  for (const k of [1, 2]) { // cadenas de vanos en muros 1 (abajo) y 2 (derecha)
+    const vs = vanosMuro(k).sort((a, b) => a.u0 - b.u0); if (!vs.length) continue; const L = k === 1 ? w : h; let u = 0;
+    const seg = (a, b, txt) => { if (k === 1) D.cota(w - b, -e, w - a, -e, 7.5, txt); else D.cota(w + e, h - b, w + e, h - a, 7.5, txt); };
+    for (const v of vs) { if (v.u0 - u > 0.05) seg(u, v.u0, f2(v.u0 - u)); seg(v.u0, v.u1, f2(v.ancho) + (v.aprox ? '~' : '')); u = v.u1; }
+    if (L - u > 0.05) seg(u, L, f2(L - u));
+  }
+  // altura de cada vano escrita junto a él
+  for (let k = 1; k <= 4; k++) for (const v of vanosMuro(k)) {
+    const um = (v.u0 + v.u1) / 2; const pt = k === 1 ? [w - um, 0.35] : k === 2 ? [w - 0.35, h - um] : k === 3 ? [um, h - 0.35] : [0.35, um];
+    const ap = antepecho(v); D.texto(`h=${f2(v.alto)}${ap.z > 0 ? ' · ap=' + f2(ap.z) : ''}`, D.X(pt[0]), D.Y(pt[1]), { pt: 4.4, ang: k === 2 || k === 4 ? 90 : 0 });
+  }
   for (const k of [3, 4]) { // cadenas de vanos en muros 3 (arriba) y 4 (izquierda)
     const vs = vanosMuro(k).sort((a, b) => a.u0 - b.u0); if (!vs.length) continue; const L = k === 3 ? w : h; let u = 0;
     for (const v of vs) {
@@ -271,7 +313,7 @@ function dibujarAlzado(D, s, o, k, area, edif) {
   for (const el of elementosDe(s.id).filter((x) => Number(x.muro) === k)) { const [z0, al] = alturaElemento(el, H); const xa = num(el.pos), xb = xa + num(el.ancho); D.grosor('fina'); D.rectM(xa, z0, xb, al); D.linea(xa, z0, xb, al); D.linea(xa, al, xb, z0); D.texto(MAY(el.nombre), D.X((xa + xb) / 2), D.Y(al) - 1, { pt: 4.8 }); if (z0 > 0.01) D.cota(xa, 0, xa, z0, -3.5, f2(z0), { pt: 5 }); }
   D.cota(0, 0, L, 0, 7, f2(L) + ((o && largoObra(o, s, k) != null) ? '' : '*'));
   D.cota(L, 0, L, H, 6, Hm ? f2(H) : 'H?');
-  if (Hm) { const neto = L * H - vs.reduce((t, v) => t + v.ancho * v.alto, 0); D.texto(`ÁREA NETA ${f2(neto)} m²`, D.X(L / 2), D.Y(H / 2), { pt: 5.5 }); }
+  if (Hm) { const neto = L * H - vs.reduce((t, v) => t + v.ancho * v.alto, 0); D.texto(`ÁREA NETA ${f2(neto)} m²`, D.X(centroLibre(L, vs.map((v) => [v.x - 0.3, v.x + v.ancho + 0.3]))), D.Y(H / 2), { pt: 5.5 }); }
   const v = vecino(edif, s, k);
   D.texto(`ALZADO MURO ${k}${v ? ' · COLINDA CON ' + MAY(v) : ''}`, ax + (bx - ax) / 2, by - 6, { pt: 6.5, negrita: true });
   D.texto(`ESCALA 1:${esc}`, ax + (bx - ax) / 2, by - 2.5, { pt: 5 });
