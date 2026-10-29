@@ -1,6 +1,6 @@
 /* ================= Memorias de Obra · app sin conexión ================= */
 'use strict';
-const VERSION = 'beta 0.4.0';
+const VERSION = 'beta 0.4.1';
 const DEF_UBIC = ['ALOJAMIENTO GENERAL', 'BAÑO GENERAL', 'CUBIERTA', 'FACHADA', 'TANQUE ELEVADO'];
 
 /* ---------- Almacenamiento local (IndexedDB) ---------- */
@@ -520,6 +520,9 @@ function abrirMedida(cod, m) {
     if (v === 0) { toast('Faltan medidas: el resultado es 0.'); return; }
     const raras = ['a', 'b', 'c'].filter((k) => tipo !== 'ACERO' && Number(d[k]) > 150);
     if (raras.length && !host.dataset.okRaro) { host.dataset.okRaro = '1'; toast('Hay una medida mayor a 150 m. Revisa la coma; si está bien, toca Guardar otra vez.'); return; }
+    const dest = await confirmarDestino(d.dest, v, it.und);
+    if (!dest) return;
+    if (dest !== d.dest) { d.dest = dest; host.querySelectorAll('[data-dest]').forEach((x) => x.setAttribute('aria-pressed', x.dataset.dest === dest)); $('#subBox', host).hidden = dest === 'balance'; }
     let historial = d.historial || [];
     if (lock) {
       const motivo = (($('#f_motivo', host) || {}).value || '').trim();
@@ -554,6 +557,25 @@ function abrirMedida(cod, m) {
     $('#corregir', host).addEventListener('click', async () => { if (await pedirDirector('Para corregir una medida que ya se cobró.')) { cerrar(); abrirMedida(cod, S.medidas[m.id]); } });
   }
   setTimeout(() => { if (nuevo) { const f = $(d.ubic ? '#f_elem' : '#f_ubic', host); if (f) f.focus(); } }, 60);
+}
+// confirmación antes de guardar: ¿va al balance o a la obra ejecutada (actas y cortes)?
+function confirmarDestino(dest, v, und) {
+  return new Promise((res) => {
+    const otro = dest === 'balance' ? 'obra' : 'balance';
+    const box = document.createElement('div'); box.className = 'confirma'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true');
+    box.innerHTML = `<div class="confirma-c">
+      <div class="eyebrow">Confirma antes de guardar</div>
+      <div class="confirma-t">¿Seguro que esta medida va para <b class="${dest === 'balance' ? 'c-bal' : 'c-obra'}">${dest === 'balance' ? 'el BALANCE' : 'OBRA EJECUTADA'}</b>?</div>
+      <div class="hint">${dest === 'balance' ? 'Cuenta en el balance (lo que el proyecto va a tener). No entra en actas ni cortes.' : 'Cuenta como obra ya hecha: entra en la próxima acta y en el corte del subcontratista.'} Resultado: <b class="num">${fmt(v)} ${esc(und || '')}</b></div>
+      <button class="btn pri" type="button" data-r="${dest}">Sí, guardar en ${dest === 'balance' ? 'Balance' : 'Obra ejecutada'}</button>
+      <button class="btn" type="button" data-r="${otro}">No, guardar en ${otro === 'balance' ? 'Balance' : 'Obra ejecutada'}</button>
+      <button class="btn ghost" type="button" data-r="">Cancelar</button>
+    </div>`;
+    document.body.appendChild(box);
+    box.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', () => { box.remove(); res(b.dataset.r || null); }));
+    box.addEventListener('click', (e) => { if (e.target === box) { box.remove(); res(null); } });
+    setTimeout(() => box.querySelector('[data-r]').focus(), 30);
+  });
 }
 function verFoto(src) {
   const v = document.createElement('div'); v.className = 'viewer'; v.innerHTML = `<img src="${src}" alt="Foto de soporte">`;
